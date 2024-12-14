@@ -12,7 +12,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -27,13 +26,11 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Toast
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
-//import com.google.firebase.crashlytics.buildtools.reloc.com.google.common.util.concurrent.Service
 import java.io.IOException
 
 class UnlockReceiver : BroadcastReceiver() {
@@ -271,6 +268,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /*
     private fun requestBatteryOptimizationExclusion() {
         val intent = Intent()
         val packageName = packageName
@@ -280,7 +278,7 @@ class MainActivity : AppCompatActivity() {
             intent.data = Uri.parse("package:$packageName")
             startActivity(intent)
         }
-    }
+    }*/
 
     private fun saveSettings(wallpapers: List<Uri>, interval: Long) {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
