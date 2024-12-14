@@ -1,6 +1,7 @@
 package com.example.wallpaperchanger
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -158,8 +159,8 @@ class ImageAdapter(private val imageUris: MutableList<Uri>, private val context:
             .load(uri)
             .into(holder.imageView)
 
-        holder.removeButton.setOnClickListener {
-            removeCallback(uri)
+        holder.imageView.setOnClickListener {
+            showRemoveDialog(uri)
         }
     }
 
@@ -167,11 +168,22 @@ class ImageAdapter(private val imageUris: MutableList<Uri>, private val context:
         return imageUris.size
     }
 
+    private fun showRemoveDialog(uri: Uri) {
+        AlertDialog.Builder(context)
+            .setTitle("Remove Image")
+            .setMessage("Are you sure you want to remove this image?")
+            .setPositiveButton("Yes") { dialog, which ->
+                removeCallback(uri)
+            }
+            .setNegativeButton("No", null)
+            .show()
+    }
+
     class ImageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val imageView: ImageView = itemView.findViewById(R.id.image_view)
-        val removeButton: Button = itemView.findViewById(R.id.remove_button)
     }
 }
+
 
 class MainActivity : AppCompatActivity() {
     private val pickImages = 1
@@ -303,5 +315,6 @@ class MainActivity : AppCompatActivity() {
         imageAdapter.notifyDataSetChanged()
     }
 }
+
 
 
