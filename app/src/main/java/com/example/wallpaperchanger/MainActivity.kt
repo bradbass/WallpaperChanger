@@ -11,7 +11,10 @@ import android.app.WallpaperManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.Manifest
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -27,12 +30,16 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import android.graphics.BitmapFactory
+import android.util.Log
 import java.io.IOException
 
+/*
 class UnlockReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (intent?.action == Intent.ACTION_USER_PRESENT) {
@@ -40,62 +47,101 @@ class UnlockReceiver : BroadcastReceiver() {
             context?.startService(serviceIntent)
         }
     }
-}
+}*/
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
-            val serviceIntent = Intent(context, WallpaperService::class.java)
-            ContextCompat.startForegroundService(context!!, serviceIntent)
+            val sharedPreferences = context?.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+            val expectedCount = sharedPreferences?.getInt("wallpaper_count", 0) ?: 0
+            val allUris = mutableListOf<Uri>()
+            var index = 0
+
+            while (allUris.size < expectedCount) {
+                val key = "wallpapers_$index"
+                val uriStrings = sharedPreferences?.getStringSet(key, null) ?: break
+                allUris.addAll(uriStrings.map { Uri.parse(it) })
+                index++
+            }
+
+            val interval = sharedPreferences?.getLong("interval", 5 * 60 * 1000) ?: (5 * 60 * 1000)
+
+            if (allUris.isNotEmpty()) {
+                val serviceIntent = Intent(context, WallpaperService::class.java).apply {
+                    putParcelableArrayListExtra("imageUris", ArrayList(allUris))
+                    putExtra("interval", interval)
+                }
+                context?.let {
+                    ContextCompat.startForegroundService(it, serviceIntent)
+                }
+            }
         }
     }
 }
 
-class WallpaperService : Service() {
 
+class WallpaperService : Service() {
     private val handler = Handler(Looper.getMainLooper())
+    private val imageUris = mutableListOf<Uri>()
+    private var interval: Long = 5 * 60 * 1000
+    private lateinit var wakeLock: PowerManager.WakeLock
+
     private val wallpaperRunnable = object : Runnable {
         override fun run() {
             changeWallpaper()
             handler.postDelayed(this, interval)
         }
     }
-    private val imageUris = mutableListOf<Uri>()
-    private var interval: Long = 5 * 60 * 1000 // Default to 5 minutes
-    //private var currentIndex = 0
-    private lateinit var wakeLock: PowerManager.WakeLock
-
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
 
     override fun onCreate() {
         super.onCreate()
+        initializeWakeLock()
+    }
 
+    private fun initializeWakeLock() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WallpaperService::WakeLock")
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "WallpaperService::WakeLock"
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.let {
-            val imageUrisList = it.getParcelableArrayListExtra<Uri>("imageUris")
-            if (imageUrisList != null) {
-                imageUris.clear()
-                imageUris.addAll(imageUrisList)
-            }
-            interval = it.getLongExtra("interval", 5 * 60 * 1000) // Default to 5 minutes if not provided
-            //currentIndex = it.getIntExtra("currentIndex", 0)
+        intent?.let { processIntent(it) }
+        startForegroundService()
+        return START_STICKY
+    }
+
+    private fun processIntent(intent: Intent) {
+        intent.getParcelableArrayListExtra<Uri>("imageUris")?.let {
+            imageUris.clear()
+            imageUris.addAll(it)
         }
+        interval = intent.getLongExtra("interval", 5 * 60 * 1000)
+    }
 
-        wakeLock.acquire()
-
+    private fun startForegroundService() {
+        wakeLock.acquire(10*60*1000L /*10 minutes*/)
         startForeground(1, createNotification())
         handler.post(wallpaperRunnable)
+        //changeWallpaper()
+    }
 
-        // Change wallpaper immediately when the service starts
-        changeWallpaper()
+    private fun setWallpaper(imageUri: Uri) {
+        try {
+            contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                WallpaperManager.getInstance(applicationContext).setBitmap(bitmap)
+            }
+        } catch (e: IOException) {
+            Log.e("WallpaperService", "Failed to set wallpaper", e)
+        }
+    }
 
-        return START_STICKY
+    private fun changeWallpaper() {
+        if (imageUris.isNotEmpty()) {
+            setWallpaper(imageUris.random())
+        }
     }
 
     override fun onDestroy() {
@@ -103,6 +149,8 @@ class WallpaperService : Service() {
         wakeLock.release()
         super.onDestroy()
     }
+
+    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun createNotification(): Notification {
         val channelId = "WallpaperServiceChannel"
@@ -122,6 +170,7 @@ class WallpaperService : Service() {
             .build()
     }
 
+    /*
     private fun setWallpaper(imageUri: Uri) {
         try {
             val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, imageUri)
@@ -139,7 +188,7 @@ class WallpaperService : Service() {
             val randomImageUri = imageUris.random()
             setWallpaper(randomImageUri)
         }
-    }
+    }*/
 }
 
 class ImageAdapter(private val imageUris: MutableList<Uri>, private val context: Context, private val removeCallback: (Uri) -> Unit) :
@@ -184,63 +233,106 @@ class ImageAdapter(private val imageUris: MutableList<Uri>, private val context:
 
 class MainActivity : AppCompatActivity() {
     private val pickImages = 1
+    private val PERMISSION_REQUEST_CODE = 100
     private val imageUris = mutableListOf<Uri>()
     private lateinit var imageAdapter: ImageAdapter
+
+    private val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+    } else {
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        setupRecyclerView()
+        loadSettings()
+        setupButtons()
+    }
+
+    private fun setupRecyclerView() {
         val recyclerView: RecyclerView = findViewById(R.id.recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
         imageAdapter = ImageAdapter(imageUris, this) { uri -> removeImage(uri) }
         recyclerView.adapter = imageAdapter
+    }
 
-        val (savedWallpapers, savedInterval) = loadSettings()
-        imageUris.addAll(savedWallpapers)
-        imageAdapter.notifyDataSetChanged()
-
-        val intervalInput: EditText = findViewById(R.id.interval_input)
-        intervalInput.setText((savedInterval / 60 / 1000).toString()) // Convert milliseconds to minutes
-
-        val pickImagesButton: Button = findViewById(R.id.pick_images_button)
-        pickImagesButton.setOnClickListener {
-            val intent = Intent(Intent.ACTION_GET_CONTENT)
-            intent.type = "image/*"
-            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-            startActivityForResult(intent, pickImages)
+    private fun setupButtons() {
+        findViewById<Button>(R.id.pick_images_button).setOnClickListener {
+            if (hasPermissions()) {
+                launchImagePicker()
+            } else {
+                checkAndRequestPermissions()
+            }
         }
 
-        val startServiceButton: Button = findViewById(R.id.start_service_button)
-        startServiceButton.setOnClickListener {
-            val intervalInput: EditText = findViewById(R.id.interval_input)
-            val interval = intervalInput.text.toString().toIntOrNull()
+        findViewById<Button>(R.id.start_service_button).setOnClickListener {
+            startWallpaperService()
+        }
 
-            if (interval == null || interval <= 0) {
+        findViewById<Button>(R.id.stop_service_button).setOnClickListener {
+            stopWallpaperService()
+        }
+    }
+
+    private fun hasPermissions(): Boolean {
+        return requiredPermissions.all { permission: String ->
+            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        ActivityCompat.requestPermissions(this, requiredPermissions, PERMISSION_REQUEST_CODE)
+    }
+
+    private fun launchImagePicker() {
+        val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
+            type = "image/*"
+            putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+        }
+        startActivityForResult(intent, pickImages)
+    }
+
+    private fun startWallpaperService() {
+        val intervalInput: EditText = findViewById(R.id.interval_input)
+        val interval = intervalInput.text.toString().toIntOrNull()
+
+        when {
+            interval == null || interval <= 0 -> {
                 Toast.makeText(this, "Please enter a valid interval in minutes", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
             }
-
-            if (imageUris.isNotEmpty()) {
-                saveSettings(imageUris, interval * 60 * 1000L) // Convert minutes to milliseconds
-
-                val serviceIntent = Intent(this, WallpaperService::class.java)
-                serviceIntent.putParcelableArrayListExtra("imageUris", ArrayList(imageUris))
-                serviceIntent.putExtra("interval", interval * 60 * 1000L) // Convert minutes to milliseconds
-
-                // Request exclusion from battery optimization
-                //requestBatteryOptimizationExclusion()
-
-                ContextCompat.startForegroundService(this, serviceIntent)
-            } else {
+            imageUris.isEmpty() -> {
                 Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
             }
-        }
+            else -> {
+                val intervalMillis = interval * 60 * 1000L
+                saveSettings(imageUris, intervalMillis)
 
-        val stopServiceButton: Button = findViewById(R.id.stop_service_button)
-        stopServiceButton.setOnClickListener {
-            val serviceIntent = Intent(this, WallpaperService::class.java)
-            stopService(serviceIntent)
+                val serviceIntent = Intent(this, WallpaperService::class.java).apply {
+                    putParcelableArrayListExtra("imageUris", ArrayList(imageUris))
+                    putExtra("interval", intervalMillis)
+                }
+                ContextCompat.startForegroundService(this, serviceIntent)
+            }
+        }
+    }
+
+    private fun stopWallpaperService() {
+        stopService(Intent(this, WallpaperService::class.java))
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_CODE && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            launchImagePicker()
+        } else {
+            Toast.makeText(this, "Permissions required to access images", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -253,18 +345,25 @@ class MainActivity : AppCompatActivity() {
                     val count = it.clipData!!.itemCount
                     for (i in 0 until count) {
                         val imageUri = it.clipData!!.getItemAt(i).uri
+                        contentResolver.takePersistableUriPermission(
+                            imageUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
                         newImageUris.add(imageUri)
                     }
                 } else if (it.data != null) {
                     val imageUri = it.data!!
+                    contentResolver.takePersistableUriPermission(
+                        imageUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
                     newImageUris.add(imageUri)
                 }
 
-                // Avoid duplications by adding only new images
                 val uniqueImageUris = newImageUris.filter { newUri -> !imageUris.contains(newUri) }
                 imageUris.addAll(uniqueImageUris)
+                imageAdapter.notifyDataSetChanged()
             }
-            imageAdapter.notifyDataSetChanged()
         }
     }
 
@@ -284,7 +383,12 @@ class MainActivity : AppCompatActivity() {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val editor = sharedPreferences.edit()
 
-        // Convert List<Uri> to Set<String> in chunks
+        // Clear previous settings first
+        editor.clear()
+
+        // Save the total count for validation during loading
+        editor.putInt("wallpaper_count", wallpapers.size)
+
         wallpapers.chunked(100).forEachIndexed { index, chunk ->
             val key = "wallpapers_$index"
             val uriStrings = chunk.map { it.toString() }.toSet()
@@ -296,15 +400,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSettings(): Pair<List<Uri>, Long> {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+        val expectedCount = sharedPreferences.getInt("wallpaper_count", 0)
         val allUris = mutableListOf<Uri>()
+
         var index = 0
-        while (true) {
+        while (allUris.size < expectedCount) {
             val key = "wallpapers_$index"
             val uriStrings = sharedPreferences.getStringSet(key, null) ?: break
             allUris.addAll(uriStrings.map { Uri.parse(it) })
             index++
         }
-        val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)  // Default to 5 minutes in milliseconds
+
+        val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
         return Pair(allUris, interval)
     }
 
