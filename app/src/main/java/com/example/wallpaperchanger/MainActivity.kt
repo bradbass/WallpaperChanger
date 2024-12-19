@@ -257,7 +257,18 @@ class MainActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         imageAdapter = ImageAdapter(imageUris, this) { uri -> removeImage(uri) }
         recyclerView.adapter = imageAdapter
+
+        // Load saved settings
+        val (savedWallpapers, savedInterval) = loadSettings()
+        imageUris.clear()  // Clear existing before adding saved
+        imageUris.addAll(savedWallpapers)
+        imageAdapter.notifyDataSetChanged()
+
+        // Update interval input
+        val intervalInput: EditText = findViewById(R.id.interval_input)
+        intervalInput.setText((savedInterval / 60 / 1000).toString())
     }
+
 
     private fun setupButtons() {
         findViewById<Button>(R.id.pick_images_button).setOnClickListener {
