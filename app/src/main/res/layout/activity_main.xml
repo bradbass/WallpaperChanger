@@ -13,23 +13,26 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="16dp">
+        android:padding="8dp">
 
         <Button
             android:id="@+id/pick_images_button"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:text="Image"
+            android:layout_marginHorizontal="2dp"
+            android:text="Pick"
+            android:textSize="12sp"
             android:textColor="?attr/colorOnPrimary"
             android:backgroundTint="?attr/colorPrimary"/>
 
         <EditText
             android:id="@+id/interval_input"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:hint="Interval (min)"
+            android:hint="Min"
+            android:gravity="center"
             android:textColor="?attr/colorPrimary"
             android:backgroundTint="?attr/colorPrimary"
             android:inputType="number"/>
@@ -37,29 +40,35 @@
         <Button
             android:id="@+id/start_service_button"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
             android:text="Start"
+            android:textSize="12sp"
             android:textColor="?attr/colorOnPrimary"
             android:backgroundTint="?attr/colorPrimary"/>
 
         <Button
             android:id="@+id/stop_service_button"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
             android:text="Stop"
+            android:textSize="12sp"
             android:textColor="?attr/colorOnPrimary"
             android:backgroundTint="?attr/colorPrimary"/>
 
         <Button
             android:id="@+id/clear_all_button"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
             android:text="Clear"
+            android:textSize="12sp"
             android:textColor="?attr/colorOnPrimary"
-            android:backgroundTint="?attr/colorPrimary"/>/>
+            android:backgroundTint="?attr/colorPrimary"/>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -70,3 +79,4 @@
         android:background="?attr/colorBackground"
         tools:listitem="@layout/image_item"/>
 </LinearLayout>
+
