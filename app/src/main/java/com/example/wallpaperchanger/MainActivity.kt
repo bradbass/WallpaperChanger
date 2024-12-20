@@ -236,6 +236,9 @@ class ImageAdapter(
         val dialog = Dialog(context, android.R.style.Theme_Material_Light_NoActionBar_Fullscreen)
         dialog.setContentView(R.layout.image_preview_dialog)
 
+        // Fade in animation
+        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
+
         val previewImage = dialog.findViewById<ImageView>(R.id.preview_image)
         Glide.with(context)
             .load(uri)
