@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
+import android.app.Dialog
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -37,6 +38,8 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import android.graphics.BitmapFactory
 import android.util.Log
+import android.widget.CheckBox
+import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
 
 /*
@@ -191,8 +194,18 @@ class WallpaperService : Service() {
     }*/
 }
 
-class ImageAdapter(private val imageUris: MutableList<Uri>, private val context: Context, private val removeCallback: (Uri) -> Unit) :
-    RecyclerView.Adapter<ImageAdapter.ImageViewHolder>() {
+class ImageAdapter(
+    private val imageUris: MutableList<Uri>,
+    private val context: Context,
+    private val removeCallback: (List<Uri>) -> Unit
+) : RecyclerView.Adapter<ImageAdapter.ImageViewHolder>() {
+
+    private val selectedImages = mutableSetOf<Uri>()
+
+    class ImageViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val imageView: ImageView = view.findViewById(R.id.image_view)
+        val checkbox: CheckBox = view.findViewById(R.id.image_checkbox)
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ImageViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.image_item, parent, false)
@@ -205,31 +218,45 @@ class ImageAdapter(private val imageUris: MutableList<Uri>, private val context:
             .load(uri)
             .into(holder.imageView)
 
+        holder.checkbox.isChecked = selectedImages.contains(uri)
+        holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                selectedImages.add(uri)
+            } else {
+                selectedImages.remove(uri)
+            }
+        }
+
         holder.imageView.setOnClickListener {
-            showRemoveDialog(uri)
+            showImagePreview(uri)
         }
     }
 
-    override fun getItemCount(): Int {
-        return imageUris.size
+    private fun showImagePreview(uri: Uri) {
+        val dialog = Dialog(context, android.R.style.Theme_Material_Light_NoActionBar_Fullscreen)
+        dialog.setContentView(R.layout.image_preview_dialog)
+
+        val previewImage = dialog.findViewById<ImageView>(R.id.preview_image)
+        Glide.with(context)
+            .load(uri)
+            .into(previewImage)
+
+        previewImage.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 
-    private fun showRemoveDialog(uri: Uri) {
-        AlertDialog.Builder(context)
-            .setTitle("Remove Image")
-            .setMessage("Are you sure you want to remove this image?")
-            .setPositiveButton("Yes") { dialog, which ->
-                removeCallback(uri)
-            }
-            .setNegativeButton("No", null)
-            .show()
-    }
+    override fun getItemCount(): Int = imageUris.size
 
-    class ImageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val imageView: ImageView = itemView.findViewById(R.id.image_view)
+    fun getSelectedImages(): List<Uri> = selectedImages.toList()
+
+    fun clearSelections() {
+        selectedImages.clear()
+        notifyDataSetChanged()
     }
 }
-
 
 class MainActivity : AppCompatActivity() {
     private val pickImages = 1
@@ -254,21 +281,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         val recyclerView: RecyclerView = findViewById(R.id.recycler_view)
-        recyclerView.layoutManager = LinearLayoutManager(this)
-        imageAdapter = ImageAdapter(imageUris, this) { uri -> removeImage(uri) }
+        // Use GridLayoutManager instead of LinearLayoutManager for grid display
+        recyclerView.layoutManager = GridLayoutManager(this, 2) // 2 columns
+        imageAdapter = ImageAdapter(imageUris, this) { selectedImages ->
+            // Handle selected images removal here
+        }
         recyclerView.adapter = imageAdapter
 
         // Load saved settings
         val (savedWallpapers, savedInterval) = loadSettings()
-        imageUris.clear()  // Clear existing before adding saved
+        imageUris.clear()
         imageUris.addAll(savedWallpapers)
         imageAdapter.notifyDataSetChanged()
 
-        // Update interval input
         val intervalInput: EditText = findViewById(R.id.interval_input)
         intervalInput.setText((savedInterval / 60 / 1000).toString())
     }
-
 
     private fun setupButtons() {
         findViewById<Button>(R.id.pick_images_button).setOnClickListener {
@@ -288,22 +316,35 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.clear_all_button).setOnClickListener {
-            showClearAllDialog()
+            showClearDialog()
         }
     }
 
-    private fun showClearAllDialog() {
+    private fun showClearDialog() {
+        val selectedImages = imageAdapter.getSelectedImages()
+        val message = if (selectedImages.isEmpty()) {
+            "Are you sure you want to remove all images?"
+        } else {
+            "Are you sure you want to remove ${selectedImages.size} selected images?"
+        }
+
         AlertDialog.Builder(this)
-            .setTitle("Clear All Images")
-            .setMessage("Are you sure you want to remove all images?")
+            .setTitle("Remove Images")
+            .setMessage(message)
             .setPositiveButton("Yes") { _, _ ->
-                imageUris.clear()
+                if (selectedImages.isEmpty()) {
+                    imageUris.clear()
+                } else {
+                    imageUris.removeAll(selectedImages.toSet())
+                    imageAdapter.clearSelections()
+                }
                 imageAdapter.notifyDataSetChanged()
                 saveSettings(imageUris, getIntervalFromInput())
             }
             .setNegativeButton("No", null)
             .show()
     }
+
 
     private fun getIntervalFromInput(): Long {
         val intervalInput: EditText = findViewById(R.id.interval_input)
