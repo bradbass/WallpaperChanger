@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <Switch
+        android:id="@+id/enable_transitions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable Transitions"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Wallpaper Change Interval" />
+
+    <EditText
+        android:id="@+id/interval_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Change Interval (minutes)"
+        android:inputType="number"/>
+
+</LinearLayout>

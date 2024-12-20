@@ -22,7 +22,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.MediaStore
-import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -33,24 +32,15 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import android.graphics.BitmapFactory
 import android.util.Log
 import android.widget.CheckBox
+import android.widget.ImageButton
+import android.widget.Switch
 import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
-
-/*
-class UnlockReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context?, intent: Intent?) {
-        if (intent?.action == Intent.ACTION_USER_PRESENT) {
-            val serviceIntent = Intent(context, WallpaperService::class.java)
-            context?.startService(serviceIntent)
-        }
-    }
-}*/
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -81,7 +71,6 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 }
-
 
 class WallpaperService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -172,26 +161,6 @@ class WallpaperService : Service() {
             .setContentIntent(pendingIntent)
             .build()
     }
-
-    /*
-    private fun setWallpaper(imageUri: Uri) {
-        try {
-            val bitmap = MediaStore.Images.Media.getBitmap(contentResolver, imageUri)
-            val wallpaperManager = WallpaperManager.getInstance(applicationContext)
-            wallpaperManager.setBitmap(bitmap)
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun changeWallpaper() {
-        if (imageUris.isNotEmpty()) {
-            //setWallpaper(imageUris[currentIndex])
-            //currentIndex = (currentIndex + 1) % imageUris.size
-            val randomImageUri = imageUris.random()
-            setWallpaper(randomImageUri)
-        }
-    }*/
 }
 
 class ImageAdapter(
@@ -284,21 +253,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupRecyclerView() {
         val recyclerView: RecyclerView = findViewById(R.id.recycler_view)
-        // Use GridLayoutManager instead of LinearLayoutManager for grid display
-        recyclerView.layoutManager = GridLayoutManager(this, 2) // 2 columns
+        recyclerView.layoutManager = GridLayoutManager(this, 2)
         imageAdapter = ImageAdapter(imageUris, this) { selectedImages ->
             // Handle selected images removal here
         }
         recyclerView.adapter = imageAdapter
 
-        // Load saved settings
-        val (savedWallpapers, savedInterval) = loadSettings()
+        // Load saved wallpapers
+        val savedWallpapers: List<Uri> = loadSettings()
         imageUris.clear()
         imageUris.addAll(savedWallpapers)
         imageAdapter.notifyDataSetChanged()
-
-        val intervalInput: EditText = findViewById(R.id.interval_input)
-        intervalInput.setText((savedInterval / 60 / 1000).toString())
     }
 
     private fun setupButtons() {
@@ -320,6 +285,10 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.clear_all_button).setOnClickListener {
             showClearDialog()
+        }
+
+        findViewById<ImageButton>(R.id.settings_button).setOnClickListener {
+            showSettingsDialog()
         }
     }
 
@@ -373,27 +342,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startWallpaperService() {
-        val intervalInput: EditText = findViewById(R.id.interval_input)
-        val interval = intervalInput.text.toString().toIntOrNull()
-
-        when {
-            interval == null || interval <= 0 -> {
-                Toast.makeText(this, "Please enter a valid interval in minutes", Toast.LENGTH_SHORT).show()
-            }
-            imageUris.isEmpty() -> {
-                Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
-            }
-            else -> {
-                val intervalMillis = interval * 60 * 1000L
-                saveSettings(imageUris, intervalMillis)
-
-                val serviceIntent = Intent(this, WallpaperService::class.java).apply {
-                    putParcelableArrayListExtra("imageUris", ArrayList(imageUris))
-                    putExtra("interval", intervalMillis)
-                }
-                ContextCompat.startForegroundService(this, serviceIntent)
-            }
+        if (imageUris.isEmpty()) {
+            Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
+            return
         }
+
+        val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+        val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
+
+        val serviceIntent = Intent(this, WallpaperService::class.java).apply {
+            putParcelableArrayListExtra("imageUris", ArrayList(imageUris))
+            putExtra("interval", interval)
+        }
+        ContextCompat.startForegroundService(this, serviceIntent)
     }
 
     private fun stopWallpaperService() {
@@ -444,17 +405,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /*
-    private fun requestBatteryOptimizationExclusion() {
-        val intent = Intent()
-        val packageName = packageName
-        val pm = getSystemService(PowerManager::class.java)
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-            intent.data = Uri.parse("package:$packageName")
-            startActivity(intent)
-        }
-    }*/
+    private fun showSettingsDialog() {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Settings")
+            .setView(layoutInflater.inflate(R.layout.dialog_settings, null))
+            .setPositiveButton("Save") { dialog, _ ->
+                val switchTransitions = (dialog as AlertDialog).findViewById<Switch>(R.id.enable_transitions)
+                val editInterval = dialog.findViewById<EditText>(R.id.interval_input)
+
+                // Save settings
+                val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                prefs.edit().apply {
+                    putBoolean("transitions_enabled", switchTransitions?.isChecked ?: true)
+                    putLong("interval", (editInterval?.text.toString().toIntOrNull() ?: 5) * 60 * 1000L)
+                    apply()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.show()
+
+        // Load current settings
+        val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+        dialog.findViewById<Switch>(R.id.enable_transitions)?.isChecked =
+            prefs.getBoolean("transitions_enabled", true)
+        dialog.findViewById<EditText>(R.id.interval_input)?.setText(
+            (prefs.getLong("interval", 5 * 60 * 1000) / 60 / 1000).toString()
+        )
+    }
 
     private fun saveSettings(wallpapers: List<Uri>, interval: Long) {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
@@ -475,7 +454,7 @@ class MainActivity : AppCompatActivity() {
         editor.apply()
     }
 
-    private fun loadSettings(): Pair<List<Uri>, Long> {
+    private fun loadSettings(): List<Uri> {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val expectedCount = sharedPreferences.getInt("wallpaper_count", 0)
         val allUris = mutableListOf<Uri>()
@@ -488,8 +467,7 @@ class MainActivity : AppCompatActivity() {
             index++
         }
 
-        val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
-        return Pair(allUris, interval)
+        return allUris
     }
 
     private fun removeImage(uri: Uri) {
