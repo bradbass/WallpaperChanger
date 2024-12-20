@@ -286,6 +286,28 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.stop_service_button).setOnClickListener {
             stopWallpaperService()
         }
+
+        findViewById<Button>(R.id.clear_all_button).setOnClickListener {
+            showClearAllDialog()
+        }
+    }
+
+    private fun showClearAllDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Clear All Images")
+            .setMessage("Are you sure you want to remove all images?")
+            .setPositiveButton("Yes") { _, _ ->
+                imageUris.clear()
+                imageAdapter.notifyDataSetChanged()
+                saveSettings(imageUris, getIntervalFromInput())
+            }
+            .setNegativeButton("No", null)
+            .show()
+    }
+
+    private fun getIntervalFromInput(): Long {
+        val intervalInput: EditText = findViewById(R.id.interval_input)
+        return (intervalInput.text.toString().toIntOrNull() ?: 5) * 60 * 1000L
     }
 
     private fun hasPermissions(): Boolean {

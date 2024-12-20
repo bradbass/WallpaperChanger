@@ -20,7 +20,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Images"
+            android:text="Image"
             android:textColor="?attr/colorOnPrimary"
             android:backgroundTint="?attr/colorPrimary"/>
 
@@ -51,6 +51,15 @@
             android:text="Stop"
             android:textColor="?attr/colorOnPrimary"
             android:backgroundTint="?attr/colorPrimary"/>
+
+        <Button
+            android:id="@+id/clear_all_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Clear"
+            android:textColor="?attr/colorOnPrimary"
+            android:backgroundTint="?attr/colorPrimary"/>/>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
