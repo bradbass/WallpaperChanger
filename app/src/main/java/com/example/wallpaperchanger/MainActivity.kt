@@ -14,6 +14,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
 import android.app.Dialog
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -36,8 +37,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import android.graphics.BitmapFactory
 import android.util.Log
+import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.ImageButton
+import android.widget.Spinner
 import android.widget.Switch
 import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
@@ -130,9 +133,65 @@ class WallpaperService : Service() {
         }
     }
 
+    private fun setWallpaperWithPixelation(imageUri: Uri) {
+        try {
+            contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                val originalBitmap = BitmapFactory.decodeStream(inputStream)
+                val wallpaperManager = WallpaperManager.getInstance(applicationContext)
+
+                // Create working copy
+                var workingBitmap = originalBitmap.copy(originalBitmap.config, true)
+
+                // Pixelation steps (from most pixelated to clear)
+                val pixelSizes = listOf(64, 32, 16, 8, 4, 2, 1)
+
+                for (pixelSize in pixelSizes) {
+                    workingBitmap = pixelateBitmap(originalBitmap, pixelSize)
+                    wallpaperManager.setBitmap(workingBitmap)
+                    Thread.sleep(100) // Adjust timing for effect
+                }
+
+                // Set final clear image
+                wallpaperManager.setBitmap(originalBitmap)
+            }
+        } catch (e: IOException) {
+            Log.e("WallpaperService", "Failed to set wallpaper", e)
+        }
+    }
+
+    private fun pixelateBitmap(source: Bitmap, pixelSize: Int): Bitmap {
+        val width = source.width
+        val height = source.height
+
+        // Create scaled down version
+        val scaledWidth = width / pixelSize
+        val scaledHeight = height / pixelSize
+
+        // Scale down and up to create pixelation
+        val scaled = Bitmap.createScaledBitmap(source, scaledWidth, scaledHeight, false)
+        return Bitmap.createScaledBitmap(scaled, width, height, false)
+    }
+
     private fun changeWallpaper() {
         if (imageUris.isNotEmpty()) {
-            setWallpaper(imageUris.random())
+            val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+            val transitionsEnabled = sharedPreferences.getBoolean("transitions_enabled", true)
+            val transitionEffect = sharedPreferences.getInt("transition_type", Context.MODE_PRIVATE)
+
+            val nextUri = imageUris.random()
+
+            if (transitionsEnabled) {
+                when (transitionEffect) {
+                    0 -> setWallpaper(nextUri) // No transition effect
+                    1 -> setWallpaperWithPixelation(nextUri) // Pixelate effect
+                    //2 -> setWallpaperWithFade(nextUri) // Fade effect
+                    //3 -> setWallpaperWithSlide(nextUri) // Slide effect
+                    //4 -> setWallpaperWithZoom(nextUri) // Zoom effect
+                    else -> setWallpaper(nextUri)
+                }
+            } else {
+                setWallpaper(nextUri)
+            }
         }
     }
 
@@ -412,12 +471,14 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Save") { dialog, _ ->
                 val switchTransitions = (dialog as AlertDialog).findViewById<Switch>(R.id.enable_transitions)
                 val editInterval = dialog.findViewById<EditText>(R.id.interval_input)
+                val transitionSpinner = dialog.findViewById<Spinner>(R.id.transition_type)
 
                 // Save settings
                 val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
                 prefs.edit().apply {
                     putBoolean("transitions_enabled", switchTransitions?.isChecked ?: true)
                     putLong("interval", (editInterval?.text.toString().toIntOrNull() ?: 5) * 60 * 1000L)
+                    putInt("transition_type", transitionSpinner?.selectedItemPosition ?: 0)
                     apply()
                 }
             }
@@ -426,6 +487,17 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
 
+        // Setup spinner
+        val spinner = dialog.findViewById<Spinner>(R.id.transition_type)
+        ArrayAdapter.createFromResource(
+            this,
+            R.array.transition_types,
+            android.R.layout.simple_spinner_item
+        ).also { adapter ->
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            spinner?.adapter = adapter
+        }
+
         // Load current settings
         val prefs = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         dialog.findViewById<Switch>(R.id.enable_transitions)?.isChecked =
@@ -433,6 +505,7 @@ class MainActivity : AppCompatActivity() {
         dialog.findViewById<EditText>(R.id.interval_input)?.setText(
             (prefs.getLong("interval", 5 * 60 * 1000) / 60 / 1000).toString()
         )
+        spinner?.setSelection(prefs.getInt("transition_type", 0))
     }
 
     private fun saveSettings(wallpapers: List<Uri>, interval: Long) {
