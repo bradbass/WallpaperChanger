@@ -36,12 +36,15 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.Spinner
 import android.widget.Switch
+import androidx.core.graphics.drawable.toBitmap
 import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
 
@@ -119,7 +122,6 @@ class WallpaperService : Service() {
         wakeLock.acquire(10*60*1000L /*10 minutes*/)
         startForeground(1, createNotification())
         handler.post(wallpaperRunnable)
-        //changeWallpaper()
     }
 
     private fun setWallpaper(imageUri: Uri) {
@@ -143,16 +145,14 @@ class WallpaperService : Service() {
                 var workingBitmap = originalBitmap.copy(originalBitmap.config, true)
 
                 // Pixelation steps (from most pixelated to clear)
-                val pixelSizes = listOf(64, 32, 16, 8, 4, 2, 1)
+                // More gradual steps for smoother transition
+                val pixelSizes = listOf(64, 32, 16, 8)
 
                 for (pixelSize in pixelSizes) {
                     workingBitmap = pixelateBitmap(originalBitmap, pixelSize)
                     wallpaperManager.setBitmap(workingBitmap)
-                    Thread.sleep(100) // Adjust timing for effect
+                    Thread.sleep(1) // Adjust timing for effect
                 }
-
-                // Set final clear image
-                wallpaperManager.setBitmap(originalBitmap)
             }
         } catch (e: IOException) {
             Log.e("WallpaperService", "Failed to set wallpaper", e)
@@ -172,6 +172,42 @@ class WallpaperService : Service() {
         return Bitmap.createScaledBitmap(scaled, width, height, false)
     }
 
+    private fun setWallpaperWithDissolve(imageUri: Uri) {
+        try {
+            contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                val newBitmap = BitmapFactory.decodeStream(inputStream)
+                val wallpaperManager = WallpaperManager.getInstance(applicationContext)
+
+                // Get current wallpaper
+                val currentBitmap = newBitmap
+
+                // Create working bitmap for blending
+                val workingBitmap = Bitmap.createBitmap(
+                    currentBitmap.width,
+                    currentBitmap.height,
+                    Bitmap.Config.ARGB_8888
+                )
+
+                // Perform dissolve effect
+                val canvas = Canvas(workingBitmap)
+                val paint = Paint().apply {
+                    isAntiAlias = true
+                }
+
+                // Gradually increase opacity of new image
+                for (alpha in 0..255 step 5) {
+                    canvas.drawBitmap(currentBitmap, 0f, 0f, paint)
+                    paint.alpha = alpha
+                    canvas.drawBitmap(newBitmap, 0f, 0f, paint)
+                    wallpaperManager.setBitmap(workingBitmap)
+                    Thread.sleep(1)
+                }
+            }
+        } catch (e: IOException) {
+            Log.e("WallpaperService", "Failed to set wallpaper", e)
+        }
+    }
+
     private fun changeWallpaper() {
         if (imageUris.isNotEmpty()) {
             val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
@@ -184,6 +220,7 @@ class WallpaperService : Service() {
                 when (transitionEffect) {
                     0 -> setWallpaper(nextUri) // No transition effect
                     1 -> setWallpaperWithPixelation(nextUri) // Pixelate effect
+                    2 -> setWallpaperWithDissolve(nextUri)
                     //2 -> setWallpaperWithFade(nextUri) // Fade effect
                     //3 -> setWallpaperWithSlide(nextUri) // Slide effect
                     //4 -> setWallpaperWithZoom(nextUri) // Zoom effect
@@ -306,7 +343,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         setupRecyclerView()
-        loadSettings()
         setupButtons()
     }
 
@@ -370,12 +406,11 @@ class MainActivity : AppCompatActivity() {
                     imageAdapter.clearSelections()
                 }
                 imageAdapter.notifyDataSetChanged()
-                saveSettings(imageUris, getIntervalFromInput())
+                saveSettings(imageUris)
             }
             .setNegativeButton("No", null)
             .show()
     }
-
 
     private fun getIntervalFromInput(): Long {
         val intervalInput: EditText = findViewById(R.id.interval_input)
@@ -460,6 +495,7 @@ class MainActivity : AppCompatActivity() {
                 val uniqueImageUris = newImageUris.filter { newUri -> !imageUris.contains(newUri) }
                 imageUris.addAll(uniqueImageUris)
                 imageAdapter.notifyDataSetChanged()
+                saveSettings(imageUris)
             }
         }
     }
@@ -508,22 +544,26 @@ class MainActivity : AppCompatActivity() {
         spinner?.setSelection(prefs.getInt("transition_type", 0))
     }
 
-    private fun saveSettings(wallpapers: List<Uri>, interval: Long) {
+    private fun saveSettings(wallpapers: List<Uri>) {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val editor = sharedPreferences.edit()
 
-        // Clear previous settings first
-        editor.clear()
+        // Remove only wallpaper-related keys
+        val keysToRemove = mutableListOf<String>()
+        sharedPreferences.all.keys.forEach { key ->
+            if (key.startsWith("wallpapers_") || key == "wallpaper_count") {
+                keysToRemove.add(key)
+            }
+        }
+        keysToRemove.forEach { editor.remove(it) }
 
-        // Save the total count for validation during loading
+        // Save the new wallpaper data
         editor.putInt("wallpaper_count", wallpapers.size)
-
         wallpapers.chunked(100).forEachIndexed { index, chunk ->
             val key = "wallpapers_$index"
             val uriStrings = chunk.map { it.toString() }.toSet()
             editor.putStringSet(key, uriStrings)
         }
-        editor.putLong("interval", interval)
         editor.apply()
     }
 
