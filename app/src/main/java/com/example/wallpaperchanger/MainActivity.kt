@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Dialog
 import android.graphics.Bitmap
 import android.net.Uri
@@ -44,6 +45,7 @@ import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.Spinner
 import android.widget.Switch
+import androidx.annotation.RequiresExtension
 import androidx.core.graphics.drawable.toBitmap
 import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
@@ -320,6 +322,7 @@ class ImageAdapter(
 
     fun getSelectedImages(): List<Uri> = selectedImages.toList()
 
+    @SuppressLint("NotifyDataSetChanged")
     fun clearSelections() {
         selectedImages.clear()
         notifyDataSetChanged()
@@ -338,6 +341,7 @@ class MainActivity : AppCompatActivity() {
         arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
+    @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -346,6 +350,7 @@ class MainActivity : AppCompatActivity() {
         setupButtons()
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     private fun setupRecyclerView() {
         val recyclerView: RecyclerView = findViewById(R.id.recycler_view)
         recyclerView.layoutManager = GridLayoutManager(this, 2)
@@ -361,6 +366,7 @@ class MainActivity : AppCompatActivity() {
         imageAdapter.notifyDataSetChanged()
     }
 
+    @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     private fun setupButtons() {
         findViewById<Button>(R.id.pick_images_button).setOnClickListener {
             if (hasPermissions()) {
@@ -387,6 +393,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     private fun showClearDialog() {
         val selectedImages = imageAdapter.getSelectedImages()
         val message = if (selectedImages.isEmpty()) {
@@ -427,6 +434,7 @@ class MainActivity : AppCompatActivity() {
         ActivityCompat.requestPermissions(this, requiredPermissions, PERMISSION_REQUEST_CODE)
     }
 
+    @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     private fun launchImagePicker() {
         val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
             type = "image/*"
@@ -455,6 +463,7 @@ class MainActivity : AppCompatActivity() {
         stopService(Intent(this, WallpaperService::class.java))
     }
 
+    @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -468,6 +477,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == pickImages && resultCode == Activity.RESULT_OK) {
@@ -583,6 +593,7 @@ class MainActivity : AppCompatActivity() {
         return allUris
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     private fun removeImage(uri: Uri) {
         imageUris.remove(uri)
         imageAdapter.notifyDataSetChanged()
