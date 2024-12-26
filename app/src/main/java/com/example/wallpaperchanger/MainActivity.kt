@@ -148,7 +148,7 @@ class WallpaperService : Service() {
 
                 // Pixelation steps (from most pixelated to clear)
                 // More gradual steps for smoother transition
-                val pixelSizes = listOf(64, 32, 16, 8)
+                val pixelSizes = listOf(64, 32, 16, 8, 1)
 
                 for (pixelSize in pixelSizes) {
                     workingBitmap = pixelateBitmap(originalBitmap, pixelSize)
