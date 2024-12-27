@@ -46,7 +46,6 @@ import android.widget.ImageButton
 import android.widget.Spinner
 import android.widget.Switch
 import androidx.annotation.RequiresExtension
-import androidx.core.graphics.drawable.toBitmap
 import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
 
@@ -419,11 +418,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun getIntervalFromInput(): Long {
-        val intervalInput: EditText = findViewById(R.id.interval_input)
-        return (intervalInput.text.toString().toIntOrNull() ?: 5) * 60 * 1000L
-    }
-
     private fun hasPermissions(): Boolean {
         return requiredPermissions.all { permission: String ->
             ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
@@ -611,12 +605,6 @@ class MainActivity : AppCompatActivity() {
                 Log.d("Permissions", "Failed to refresh permission for $uri: ${e.message}")
             }
         }
-    }
-
-    @SuppressLint("NotifyDataSetChanged")
-    private fun removeImage(uri: Uri) {
-        imageUris.remove(uri)
-        imageAdapter.notifyDataSetChanged()
     }
 }
 
