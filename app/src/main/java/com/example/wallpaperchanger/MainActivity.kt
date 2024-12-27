@@ -449,6 +449,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        verifyAndRefreshPermissions(imageUris)
+
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
 
@@ -582,6 +584,8 @@ class MainActivity : AppCompatActivity() {
         val expectedCount = sharedPreferences.getInt("wallpaper_count", 0)
         val allUris = mutableListOf<Uri>()
 
+        verifyAndRefreshPermissions(allUris)
+
         var index = 0
         while (allUris.size < expectedCount) {
             val key = "wallpapers_$index"
@@ -591,6 +595,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         return allUris
+    }
+
+    private fun verifyAndRefreshPermissions(uris: List<Uri>) {
+        // Log current permissions
+        val persistedPermissions = contentResolver.persistedUriPermissions
+        Log.d("Permissions", "Current persisted permissions: ${persistedPermissions.map { it.uri }}")
+
+        uris.forEach { uri ->
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(uri, flags)
+                Log.d("Permissions", "Successfully refreshed permission for $uri")
+            } catch (e: SecurityException) {
+                Log.d("Permissions", "Failed to refresh permission for $uri: ${e.message}")
+            }
+        }
     }
 
     @SuppressLint("NotifyDataSetChanged")
