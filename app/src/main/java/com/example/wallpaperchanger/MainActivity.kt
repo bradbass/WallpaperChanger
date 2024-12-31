@@ -143,14 +143,14 @@ class WallpaperService : Service() {
                 val wallpaperManager = WallpaperManager.getInstance(applicationContext)
 
                 // Create working copy
-                var workingBitmap = originalBitmap.copy(originalBitmap.config, true)
+                //var workingBitmap = originalBitmap.copy(originalBitmap.config, true)
 
                 // Pixelation steps (from most pixelated to clear)
                 // More gradual steps for smoother transition
                 val pixelSizes = listOf(64, 32, 16, 8, 1)
 
                 for (pixelSize in pixelSizes) {
-                    workingBitmap = pixelateBitmap(originalBitmap, pixelSize)
+                    val workingBitmap = pixelateBitmap(originalBitmap, pixelSize)
                     wallpaperManager.setBitmap(workingBitmap)
                     Thread.sleep(1) // Adjust timing for effect
                 }
@@ -217,6 +217,8 @@ class WallpaperService : Service() {
 
             val nextUri = imageUris.random()
 
+            verifyAndRefreshPermissions(nextUri)
+
             if (transitionsEnabled) {
                 when (transitionEffect) {
                     0 -> setWallpaper(nextUri) // No transition effect
@@ -230,6 +232,16 @@ class WallpaperService : Service() {
             } else {
                 setWallpaper(nextUri)
             }
+        }
+    }
+
+    private fun verifyAndRefreshPermissions(uri: Uri) {
+        try {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, flags)
+            Log.d("PermissionDebug", "Successfully refreshed permission for $uri")
+        } catch (e: SecurityException) {
+            Log.e("PermissionDebug", "Failed to refresh permission for $uri: ${e.message}")
         }
     }
 
@@ -438,6 +450,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startWallpaperService() {
+        stopWallpaperService()
         if (imageUris.isEmpty()) {
             Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
             return
