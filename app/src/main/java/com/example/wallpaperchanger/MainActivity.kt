@@ -211,13 +211,45 @@ class WallpaperService : Service() {
 
     private fun changeWallpaper() {
         if (imageUris.isNotEmpty()) {
+            val validUris = imageUris.filter { uri ->
+                try {
+                    contentResolver.openInputStream(uri)?.use { true } ?: false
+                } catch (e: Exception) {
+                    Log.d("PermissionDebug", "Removing invalid URI: $uri")
+                    false
+                }
+            }
+
+            if (validUris.isEmpty()) {
+                Log.e("PermissionDebug", "No valid URIs remaining")
+                return
+            }
+
             val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
             val transitionsEnabled = sharedPreferences.getBoolean("transitions_enabled", true)
             val transitionEffect = sharedPreferences.getInt("transition_type", Context.MODE_PRIVATE)
 
-            val nextUri = imageUris.random()
+            // Update the stored list with only valid URIs
+            imageUris.clear()
+            imageUris.addAll(validUris)
 
-            verifyAndRefreshPermissions(nextUri)
+            // Save the updated list
+            saveSettings(validUris)
+
+            val nextUri = validUris.random()
+
+            if (!hasValidPermission(nextUri)) {
+                verifyAndRefreshPermissions(nextUri)
+                if (!hasValidPermission(nextUri)) {
+                    Log.e("PermissionDebug", "Unable to refresh permissions for $nextUri")
+                    // Skip this image and try another one
+                    imageUris.remove(nextUri)
+                    if (imageUris.isNotEmpty()) {
+                        changeWallpaper()
+                    }
+                    return
+                }
+            }
 
             if (transitionsEnabled) {
                 when (transitionEffect) {
@@ -235,14 +267,56 @@ class WallpaperService : Service() {
         }
     }
 
+    private fun hasValidPermission(uri: Uri): Boolean {
+        return contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission
+        }
+    }
+
     private fun verifyAndRefreshPermissions(uri: Uri) {
+        Log.d("PermissionDebug", "Starting permission refresh for $uri")
+
+        // Log current state
+        val currentPermissions = contentResolver.persistedUriPermissions
+        Log.d("PermissionDebug", "Current persisted permissions count: ${currentPermissions.size}")
+        currentPermissions.forEach { permission ->
+            Log.d("PermissionDebug", "Existing permission: ${permission.uri}, Read: ${permission.isReadPermission}")
+        }
+
         try {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
             contentResolver.takePersistableUriPermission(uri, flags)
-            Log.d("PermissionDebug", "Successfully refreshed permission for $uri")
+            Log.d("PermissionDebug", "Successfully requested permission for $uri")
+
+            // Verify the permission was actually granted
+            val verified = hasValidPermission(uri)
+            Log.d("PermissionDebug", "Permission verification result: $verified")
         } catch (e: SecurityException) {
-            Log.e("PermissionDebug", "Failed to refresh permission for $uri: ${e.message}")
+            Log.e("PermissionDebug", "Permission refresh failed for $uri: ${e.message}")
         }
+    }
+
+    private fun saveSettings(wallpapers: List<Uri>) {
+        val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+
+        // Remove only wallpaper-related keys
+        val keysToRemove = mutableListOf<String>()
+        sharedPreferences.all.keys.forEach { key ->
+            if (key.startsWith("wallpapers_") || key == "wallpaper_count") {
+                keysToRemove.add(key)
+            }
+        }
+        keysToRemove.forEach { editor.remove(it) }
+
+        // Save the new wallpaper data
+        editor.putInt("wallpaper_count", wallpapers.size)
+        wallpapers.chunked(100).forEachIndexed { index, chunk ->
+            val key = "wallpapers_$index"
+            val uriStrings = chunk.map { it.toString() }.toSet()
+            editor.putStringSet(key, uriStrings)
+        }
+        editor.apply()
     }
 
     override fun onDestroy() {
@@ -496,19 +570,25 @@ class MainActivity : AppCompatActivity() {
                     val count = it.clipData!!.itemCount
                     for (i in 0 until count) {
                         val imageUri = it.clipData!!.getItemAt(i).uri
-                        contentResolver.takePersistableUriPermission(
-                            imageUri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                        newImageUris.add(imageUri)
+                        try {
+                            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            contentResolver.takePersistableUriPermission(imageUri, flags)
+                            newImageUris.add(imageUri)
+                            Log.d("PermissionDebug", "Added new image: $imageUri")
+                        } catch (e: SecurityException) {
+                            Log.e("PermissionDebug", "Failed to take permission: $imageUri", e)
+                        }
                     }
                 } else if (it.data != null) {
                     val imageUri = it.data!!
-                    contentResolver.takePersistableUriPermission(
-                        imageUri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                    newImageUris.add(imageUri)
+                    try {
+                        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        contentResolver.takePersistableUriPermission(imageUri, flags)
+                        newImageUris.add(imageUri)
+                        Log.d("PermissionDebug", "Added single image: $imageUri")
+                    } catch (e: SecurityException) {
+                        Log.e("PermissionDebug", "Failed to take permission: $imageUri", e)
+                    }
                 }
 
                 val uniqueImageUris = newImageUris.filter { newUri -> !imageUris.contains(newUri) }
@@ -604,22 +684,34 @@ class MainActivity : AppCompatActivity() {
         return allUris
     }
 
-    private fun verifyAndRefreshPermissions(uris: List<Uri>) {
-        // Log current permissions
-        val persistedPermissions = contentResolver.persistedUriPermissions
-        Log.d("Permissions", "Current persisted permissions: ${persistedPermissions.map { it.uri }}")
+    private fun hasValidPermission(uri: Uri): Boolean {
+        return contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission
+        }
+    }
 
+    private fun verifyAndRefreshPermissions(uris: List<Uri>) {
         uris.forEach { uri ->
+            Log.d("PermissionDebug", "Starting permission refresh for $uri")
+
+            // Log current state
+            val currentPermissions = contentResolver.persistedUriPermissions
+            Log.d("PermissionDebug", "Current persisted permissions count: ${currentPermissions.size}")
+            currentPermissions.forEach { permission ->
+                Log.d("PermissionDebug", "Existing permission: ${permission.uri}, Read: ${permission.isReadPermission}")
+            }
+
             try {
                 val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(uri, flags)
-                Log.d("Permissions", "Successfully refreshed permission for $uri")
+                Log.d("PermissionDebug", "Successfully requested permission for $uri")
+
+                // Verify the permission was actually granted
+                val verified = hasValidPermission(uri)
+                Log.d("PermissionDebug", "Permission verification result: $verified")
             } catch (e: SecurityException) {
-                Log.d("Permissions", "Failed to refresh permission for $uri: ${e.message}")
+                Log.e("PermissionDebug", "Permission refresh failed for $uri: ${e.message}")
             }
         }
     }
 }
-
-
-
