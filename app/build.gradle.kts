@@ -51,6 +51,7 @@ android {
 
 dependencies {
 
+    implementation ("androidx.work:work-runtime-ktx:2.8.1")
     implementation ("com.google.android.material:material:1.4.0")
     implementation("com.github.bumptech.glide:glide:4.11.0")
     implementation(libs.firebase.crashlytics.buildtools)

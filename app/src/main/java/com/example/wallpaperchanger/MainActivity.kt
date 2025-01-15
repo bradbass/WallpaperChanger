@@ -39,6 +39,7 @@ import com.bumptech.glide.Glide
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.provider.Settings
 import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
@@ -46,9 +47,97 @@ import android.widget.ImageButton
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
+import androidx.annotation.RequiresApi
 import androidx.annotation.RequiresExtension
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.work.*
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.util.concurrent.TimeUnit
+
+object PermissionUtils {
+    fun hasValidPermission(context: Context, uri: Uri): Boolean {
+        return context.contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isReadPermission
+        }
+    }
+
+    fun verifyAndRefreshPermissions(context: Context, uri: Uri) {
+        Log.d("PermissionDebug", "Starting permission refresh for $uri")
+
+        val currentPermissions = context.contentResolver.persistedUriPermissions
+        Log.d("PermissionDebug", "Current persisted permissions count: ${currentPermissions.size}")
+        currentPermissions.forEach { permission ->
+            Log.d("PermissionDebug", "Existing permission: ${permission.uri}, Read: ${permission.isReadPermission}")
+        }
+
+        try {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+            Log.d("PermissionDebug", "Successfully requested permission for $uri")
+
+            val verified = hasValidPermission(context, uri)
+            Log.d("PermissionDebug", "Permission verification result: $verified")
+        } catch (e: SecurityException) {
+            Log.e("PermissionDebug", "Permission refresh failed for $uri: ${e.message}")
+        }
+    }
+
+    fun verifyAndRefreshPermissions(context: Context, uris: List<Uri>) {
+        uris.forEach { uri -> verifyAndRefreshPermissions(context, uri) }
+    }
+}
+
+object StorageUtils {
+    private const val MAX_STORAGE_SIZE_BYTES = 1000 * 1024 * 1024 // 1000MB limit
+    private const val COMPRESSION_QUALITY = 85 // Good balance of quality and size
+
+    fun copyImageToLocalStorage(context: Context, uri: Uri): Uri? {
+        try {
+            // Check storage size before copying
+            if (getCurrentStorageSize(context) > MAX_STORAGE_SIZE_BYTES) {
+                cleanupOldestImages(context)
+            }
+
+            val fileName = "wallpaper_${System.currentTimeMillis()}.jpg"
+            val outputFile = File(context.getExternalFilesDir(null), fileName)
+
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                // Compress and save the image
+                val bitmap = BitmapFactory.decodeStream(input)
+                FileOutputStream(outputFile).use { output ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, COMPRESSION_QUALITY, output)
+                }
+            }
+
+            Log.d("StorageDebug", "Successfully copied image to: ${outputFile.absolutePath}")
+            return Uri.fromFile(outputFile)
+        } catch (e: Exception) {
+            Log.e("StorageDebug", "Failed to copy image", e)
+            return null
+        }
+    }
+
+    private fun getCurrentStorageSize(context: Context): Long {
+        return context.getExternalFilesDir(null)?.walkTopDown()
+            ?.filter { it.name.startsWith("wallpaper_") }
+            ?.map { it.length() }
+            ?.sum() ?: 0
+    }
+
+    private fun cleanupOldestImages(context: Context) {
+        val files = context.getExternalFilesDir(null)
+            ?.listFiles { file -> file.name.startsWith("wallpaper_") }
+            ?.sortedBy { it.lastModified() }
+
+        files?.take(5)?.forEach { file ->
+            if (file.delete()) {
+                Log.d("StorageDebug", "Cleaned up old image: ${file.name}")
+            }
+        }
+    }
+}
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -76,6 +165,38 @@ class BootReceiver : BroadcastReceiver() {
                     ContextCompat.startForegroundService(it, serviceIntent)
                 }
             }
+        }
+    }
+}
+
+// Create a WorkManager class for handling wallpaper changes
+class WallpaperWorker(
+    context: Context,
+    workerParams: WorkerParameters
+) : Worker(context, workerParams) {
+
+    override fun doWork(): Result {
+        // Your wallpaper change logic here
+        return Result.success()
+    }
+
+    companion object {
+        fun scheduleWork(context: Context, interval: Long) {
+            val constraints = Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .build()
+
+            val workRequest = PeriodicWorkRequestBuilder<WallpaperWorker>(
+                interval, TimeUnit.MILLISECONDS)
+                .setConstraints(constraints)
+                .build()
+
+            WorkManager.getInstance(context)
+                .enqueueUniquePeriodicWork(
+                    "wallpaper_work",
+                    ExistingPeriodicWorkPolicy.REPLACE,
+                    workRequest
+                )
         }
     }
 }
@@ -212,45 +333,39 @@ class WallpaperService : Service() {
 
     private fun changeWallpaper() {
         if (imageUris.isNotEmpty()) {
+            Log.d("ImageTracking", "Starting wallpaper change with ${imageUris.size} images")
             val validUris = imageUris.filter { uri ->
                 try {
-                    contentResolver.openInputStream(uri)?.use { true } ?: false
+                    val file = File(uri.path!!)
+                    if (file.exists() && file.canRead()) {
+                        Log.d("ImageTracking", "Valid local file: $uri")
+                        true
+                    } else {
+                        Log.e("ImageTracking", "Invalid or unreadable file: $uri")
+                        false
+                    }
                 } catch (e: Exception) {
-                    Log.d("PermissionDebug", "Removing invalid URI: $uri")
+                    Log.e("ImageTracking", "Error checking file: $uri", e)
                     false
                 }
             }
 
             if (validUris.isEmpty()) {
-                Log.e("PermissionDebug", "No valid URIs remaining")
+                Log.e("ImageTracking", "No valid images found")
                 return
             }
 
-            val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-            val transitionsEnabled = sharedPreferences.getBoolean("transitions_enabled", true)
-            val transitionEffect = sharedPreferences.getInt("transition_type", Context.MODE_PRIVATE)
+            val nextUri = validUris.random()
+            Log.d("ImageTracking", "Selected wallpaper: $nextUri")
 
             // Update the stored list with only valid URIs
             imageUris.clear()
             imageUris.addAll(validUris)
-
-            // Save the updated list
             saveSettings(validUris)
 
-            val nextUri = validUris.random()
-
-            if (!hasValidPermission(nextUri)) {
-                verifyAndRefreshPermissions(nextUri)
-                if (!hasValidPermission(nextUri)) {
-                    Log.e("PermissionDebug", "Unable to refresh permissions for $nextUri")
-                    // Skip this image and try another one
-                    imageUris.remove(nextUri)
-                    if (imageUris.isNotEmpty()) {
-                        changeWallpaper()
-                    }
-                    return
-                }
-            }
+            val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+            val transitionsEnabled = sharedPreferences.getBoolean("transitions_enabled", true)
+            val transitionEffect = sharedPreferences.getInt("transition_type", Context.MODE_PRIVATE)
 
             if (transitionsEnabled) {
                 when (transitionEffect) {
@@ -348,72 +463,56 @@ class WallpaperService : Service() {
 }
 
 class ImageAdapter(
-    private val imageUris: MutableList<Uri>,
+    private val imageUris: List<Uri>,
     private val context: Context,
-    private val removeCallback: (List<Uri>) -> Unit
-) : RecyclerView.Adapter<ImageAdapter.ImageViewHolder>() {
+    private val onSelectionChanged: (List<Uri>) -> Unit
+) : RecyclerView.Adapter<ImageAdapter.ViewHolder>() {
 
     private val selectedImages = mutableSetOf<Uri>()
 
-    class ImageViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val imageView: ImageView = view.findViewById(R.id.image_view)
-        val checkbox: CheckBox = view.findViewById(R.id.image_checkbox)
+    inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val imageView: ImageView = itemView.findViewById(R.id.image_view)
+        val checkBox: CheckBox = itemView.findViewById(R.id.image_checkbox)
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ImageViewHolder {
-        val view = LayoutInflater.from(parent.context).inflate(R.layout.image_item, parent, false)
-        return ImageViewHolder(view)
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context)
+            .inflate(R.layout.image_item, parent, false)
+        return ViewHolder(view)
     }
 
-    override fun onBindViewHolder(holder: ImageViewHolder, position: Int) {
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val uri = imageUris[position]
+
+        // Load local image
         Glide.with(context)
             .load(uri)
+            .centerCrop()
             .into(holder.imageView)
 
-        holder.checkbox.isChecked = selectedImages.contains(uri)
-        holder.checkbox.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
+        holder.checkBox.isChecked = selectedImages.contains(uri)
+
+        holder.itemView.setOnClickListener {
+            holder.checkBox.isChecked = !holder.checkBox.isChecked
+            if (holder.checkBox.isChecked) {
                 selectedImages.add(uri)
             } else {
                 selectedImages.remove(uri)
             }
-        }
-
-        holder.imageView.setOnClickListener {
-            showImagePreview(uri)
+            onSelectionChanged(selectedImages.toList())
         }
     }
 
-    private fun showImagePreview(uri: Uri) {
-        val dialog = Dialog(context, android.R.style.Theme_Material_Light_NoActionBar_Fullscreen)
-        dialog.setContentView(R.layout.image_preview_dialog)
-
-        // Fade in animation
-        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
-
-        val previewImage = dialog.findViewById<ImageView>(R.id.preview_image)
-        Glide.with(context)
-            .load(uri)
-            .into(previewImage)
-
-        previewImage.setOnClickListener {
-            dialog.dismiss()
-        }
-
-        dialog.show()
-    }
-
-    override fun getItemCount(): Int = imageUris.size
+    override fun getItemCount() = imageUris.size
 
     fun getSelectedImages(): List<Uri> = selectedImages.toList()
 
-    @SuppressLint("NotifyDataSetChanged")
     fun clearSelections() {
         selectedImages.clear()
         notifyDataSetChanged()
     }
 }
+
 
 class MainActivity : AppCompatActivity() {
     private val pickImages = 1
@@ -434,6 +533,7 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
         setupButtons()
+        setupPeriodicCleanup()
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -501,10 +601,27 @@ class MainActivity : AppCompatActivity() {
                 }
                 imageAdapter.notifyDataSetChanged()
                 saveSettings(imageUris)
+                cleanupUnusedImages()
                 updateImageCounter()
             }
             .setNegativeButton("No", null)
             .show()
+    }
+
+    private fun cleanupUnusedImages() {
+        val storageDir = getExternalFilesDir(null)
+        val savedUris = loadSettings()
+
+        storageDir?.listFiles()?.forEach { file ->
+            if (file.name.startsWith("wallpaper_")) {
+                val fileUri = Uri.fromFile(file)
+                if (fileUri !in savedUris) {
+                    if (file.delete()) {
+                        Log.d("StorageDebug", "Deleted unused image: ${file.name}")
+                    }
+                }
+            }
+        }
     }
 
     private fun hasPermissions(): Boolean {
@@ -533,7 +650,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        verifyAndRefreshPermissions(imageUris)
+        PermissionUtils.verifyAndRefreshPermissions(this, imageUris)
 
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
@@ -563,43 +680,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun copyImageToLocalStorage(uri: Uri): Uri? {
+        try {
+            val fileName = "wallpaper_${System.currentTimeMillis()}.jpg"
+            val outputFile = File(getExternalFilesDir(null), fileName)
+
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(outputFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            Log.d("StorageDebug", "Successfully copied image to: ${outputFile.absolutePath}")
+            return Uri.fromFile(outputFile)
+        } catch (e: Exception) {
+            Log.e("StorageDebug", "Failed to copy image", e)
+            return null
+        }
+    }
+
+    private fun processNewImages(data: Intent?) {
+        data?.let {
+            val newImageUris = mutableListOf<Uri>()
+            if (it.clipData != null) {
+                val count = it.clipData!!.itemCount
+                for (i in 0 until count) {
+                    val imageUri = it.clipData!!.getItemAt(i).uri
+                    StorageUtils.copyImageToLocalStorage(this, imageUri)?.let { localUri ->
+                        newImageUris.add(localUri)
+                        Log.d("StorageDebug", "Added local image: $localUri")
+                    }
+                }
+            } else if (it.data != null) {
+                val imageUri = it.data!!
+                StorageUtils.copyImageToLocalStorage(this, imageUri)?.let { localUri ->
+                    newImageUris.add(localUri)
+                    Log.d("StorageDebug", "Added single local image: $localUri")
+                }
+            }
+
+            val uniqueImageUris = newImageUris.filter { newUri -> !imageUris.contains(newUri) }
+            imageUris.addAll(uniqueImageUris)
+            imageAdapter.notifyDataSetChanged()
+            saveSettings(imageUris)
+            updateImageCounter()
+        }
+    }
+
     @SuppressLint("NotifyDataSetChanged")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == pickImages && resultCode == Activity.RESULT_OK) {
-            data?.let {
-                val newImageUris = mutableListOf<Uri>()
-                if (it.clipData != null) {
-                    val count = it.clipData!!.itemCount
-                    for (i in 0 until count) {
-                        val imageUri = it.clipData!!.getItemAt(i).uri
-                        try {
-                            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            contentResolver.takePersistableUriPermission(imageUri, flags)
-                            newImageUris.add(imageUri)
-                            Log.d("PermissionDebug", "Added new image: $imageUri")
-                        } catch (e: SecurityException) {
-                            Log.e("PermissionDebug", "Failed to take permission: $imageUri", e)
-                        }
-                    }
-                } else if (it.data != null) {
-                    val imageUri = it.data!!
-                    try {
-                        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        contentResolver.takePersistableUriPermission(imageUri, flags)
-                        newImageUris.add(imageUri)
-                        Log.d("PermissionDebug", "Added single image: $imageUri")
-                    } catch (e: SecurityException) {
-                        Log.e("PermissionDebug", "Failed to take permission: $imageUri", e)
-                    }
-                }
-
-                val uniqueImageUris = newImageUris.filter { newUri -> !imageUris.contains(newUri) }
-                imageUris.addAll(uniqueImageUris)
-                imageAdapter.notifyDataSetChanged()
-                saveSettings(imageUris)
-                updateImageCounter()
-            }
+            processNewImages(data)
         }
     }
 
@@ -684,8 +816,6 @@ class MainActivity : AppCompatActivity() {
         val expectedCount = sharedPreferences.getInt("wallpaper_count", 0)
         val allUris = mutableListOf<Uri>()
 
-        verifyAndRefreshPermissions(allUris)
-
         var index = 0
         while (allUris.size < expectedCount) {
             val key = "wallpapers_$index"
@@ -726,5 +856,21 @@ class MainActivity : AppCompatActivity() {
                 Log.e("PermissionDebug", "Permission refresh failed for $uri: ${e.message}")
             }
         }
+    }
+    override fun onDestroy() {
+        super.onDestroy()
+        cleanupUnusedImages()
+    }
+
+    // Optional: Add periodic cleanup
+    private fun setupPeriodicCleanup() {
+        val handler = Handler(Looper.getMainLooper())
+        handler.postDelayed(object : Runnable {
+            @RequiresApi(Build.VERSION_CODES.P)
+            override fun run() {
+                cleanupUnusedImages()
+                handler.postDelayed(this, 7 * 24 * 60 * 60 * 1000) // Run daily
+            }
+        }, 24 * 60 * 60 * 1000)
     }
 }
