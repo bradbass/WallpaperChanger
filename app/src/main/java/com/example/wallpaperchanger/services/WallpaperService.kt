@@ -29,9 +29,11 @@ class WallpaperService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d("WallpaperService", "onCreate called")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d("WallpaperService", "onStartCommand called")
         intent?.let { processIntent(it) }
         startForegroundService()
         return START_STICKY
@@ -41,8 +43,10 @@ class WallpaperService : Service() {
         intent.getParcelableArrayListExtra<Uri>("imageUris")?.let {
             imageUris.clear()
             imageUris.addAll(it)
+            Log.d("WallpaperService", "Received ${imageUris.size} images: $imageUris")
         }
         interval = intent.getLongExtra("interval", 5 * 60 * 1000)
+        Log.d("WallpaperService", "Set interval to: $interval ms")
     }
 
     private fun startForegroundService() {
@@ -54,7 +58,23 @@ class WallpaperService : Service() {
         try {
             contentResolver.openInputStream(imageUri)?.use { inputStream ->
                 val bitmap = BitmapFactory.decodeStream(inputStream)
-                WallpaperManager.getInstance(applicationContext).setBitmap(bitmap)
+                val wallpaperManager = WallpaperManager.getInstance(applicationContext)
+                val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+
+                when (sharedPreferences.getInt("wallpaper_screen", R.id.both_screens)) {
+                    R.id.both_screens -> {
+                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                    }
+                    R.id.home_screen_only -> {
+                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                    }
+                    R.id.lock_screen_only -> {
+                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_LOCK)
+                    }
+                    else -> {
+                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM)
+                    }
+                }
             }
         } catch (e: IOException) {
             Log.e("WallpaperService", "Failed to set wallpaper", e)
@@ -119,31 +139,30 @@ class WallpaperService : Service() {
     }
 
     private fun changeWallpaper() {
+        Log.d("WallpaperService", "Starting changeWallpaper method")
         if (imageUris.isNotEmpty()) {
-            Log.d("ImageTracking", "Starting wallpaper change with ${imageUris.size} images")
+            Log.d("WallpaperService", "Found ${imageUris.size} images to process")
             val validUris = imageUris.filter { uri ->
                 try {
                     val file = File(uri.path!!)
-                    if (file.exists() && file.canRead()) {
-                        Log.d("ImageTracking", "Valid local file: $uri")
-                        true
-                    } else {
-                        Log.e("ImageTracking", "Invalid or unreadable file: $uri")
-                        false
-                    }
+                    val exists = file.exists()
+                    val canRead = file.canRead()
+                    Log.d("WallpaperService", "Checking URI: $uri - Exists: $exists, Readable: $canRead")
+                    exists && canRead
                 } catch (e: Exception) {
-                    Log.e("ImageTracking", "Error checking file: $uri", e)
+                    Log.e("WallpaperService", "Error checking file: $uri", e)
                     false
                 }
             }
 
+            Log.d("WallpaperService", "Valid URIs found: ${validUris.size}")
             if (validUris.isEmpty()) {
-                Log.e("ImageTracking", "No valid images found")
+                Log.e("WallpaperService", "No valid images found")
                 return
             }
 
             val nextUri = validUris.random()
-            Log.d("ImageTracking", "Selected wallpaper: $nextUri")
+            Log.d("WallpaperService", "Selected wallpaper: $nextUri")
 
             imageUris.clear()
             imageUris.addAll(validUris)
@@ -163,6 +182,8 @@ class WallpaperService : Service() {
             } else {
                 setWallpaper(nextUri)
             }
+        }else {
+            Log.d("WallpaperService", "No images in imageUris list")
         }
     }
 

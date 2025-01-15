@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -24,6 +25,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.widget.ArrayAdapter
+import android.widget.RadioGroup
 import androidx.annotation.RequiresExtension
 import com.example.wallpaperchanger.R
 import com.example.wallpaperchanger.adapters.ImageAdapter
@@ -139,12 +141,14 @@ class MainActivity : AppCompatActivity() {
                 val switchTransitions = (dialog as AlertDialog).findViewById<Switch>(R.id.enable_transitions)
                 val editInterval = dialog.findViewById<EditText>(R.id.interval_input)
                 val transitionSpinner = dialog.findViewById<Spinner>(R.id.transition_type)
+                val screenGroup = dialog.findViewById<RadioGroup>(R.id.wallpaper_screen_group)
 
                 val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
                 prefs.edit().apply {
                     putBoolean("transitions_enabled", switchTransitions?.isChecked ?: true)
                     putLong("interval", (editInterval?.text.toString().toIntOrNull() ?: 5) * 60 * 1000L)
                     putInt("transition_type", transitionSpinner?.selectedItemPosition ?: 0)
+                    putInt("wallpaper_screen", screenGroup?.checkedRadioButtonId ?: R.id.both_screens)
                     apply()
                 }
             }
@@ -166,6 +170,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
+        dialog.findViewById<RadioGroup>(R.id.wallpaper_screen_group)?.check(
+            prefs.getInt("wallpaper_screen", R.id.both_screens)
+        )
         dialog.findViewById<Switch>(R.id.enable_transitions)?.isChecked =
             prefs.getBoolean("transitions_enabled", true)
         dialog.findViewById<EditText>(R.id.interval_input)?.setText(
@@ -197,17 +204,20 @@ class MainActivity : AppCompatActivity() {
         stopWallpaperService()
         if (imageUris.isEmpty()) {
             Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
+            Log.d("MainActivity", "Service not started - no images")
             return
         }
 
         val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
         val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
 
+        Log.d("MainActivity", "Starting service with ${imageUris.size} images")
         val serviceIntent = Intent(this, WallpaperService::class.java).apply {
             putParcelableArrayListExtra("imageUris", ArrayList(imageUris))
             putExtra("interval", interval)
         }
         ContextCompat.startForegroundService(this, serviceIntent)
+        Log.d("MainActivity", "Service start requested")
     }
 
     private fun stopWallpaperService() {
@@ -228,32 +238,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun processNewImages(data: Intent?) {
+        data?.let {
+            val newImageUris = mutableListOf<Uri>()
+            if (it.clipData != null) {
+                val count = it.clipData!!.itemCount
+                for (i in 0 until count) {
+                    val imageUri = it.clipData!!.getItemAt(i).uri
+                    StorageUtils.copyImageToLocalStorage(this, imageUri)?.let { localUri ->
+                        Log.d("DuplicateCheck", "Checking new image: ${localUri.path}")
+                        imageUris.forEach { existing ->
+                            Log.d("DuplicateCheck", "Against existing: ${existing.path}")
+                        }
+
+                        val isDuplicate = imageUris.any { existing ->
+                            val isDup = existing.path == localUri.path
+                            Log.d("DuplicateCheck", "Is duplicate: $isDup")
+                            isDup
+                        }
+
+                        if (!isDuplicate) {
+                            newImageUris.add(localUri)
+                            Log.d("StorageDebug", "Added local image: $localUri")
+                        }
+                    }
+                }
+            } else if (it.data != null) {
+                val imageUri = it.data!!
+                StorageUtils.copyImageToLocalStorage(this, imageUri)?.let { localUri ->
+                    val isDuplicate = imageUris.any { existing -> existing.path == localUri.path }
+                    if (!isDuplicate) {
+                        newImageUris.add(localUri)
+                        Log.d("StorageDebug", "Added single local image: $localUri")
+                    }
+                }
+            }
+
+            imageUris.addAll(newImageUris)
+            imageAdapter.notifyDataSetChanged()
+            saveSettings(imageUris)
+            updateImageCounter()
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == pickImages && resultCode == Activity.RESULT_OK) {
-            data?.let {
-                val newImageUris = mutableListOf<Uri>()
-                if (it.clipData != null) {
-                    val count = it.clipData!!.itemCount
-                    for (i in 0 until count) {
-                        val imageUri = it.clipData!!.getItemAt(i).uri
-                        StorageUtils.copyImageToLocalStorage(this, imageUri)?.let { localUri ->
-                            newImageUris.add(localUri)
-                        }
-                    }
-                } else if (it.data != null) {
-                    val imageUri = it.data!!
-                    StorageUtils.copyImageToLocalStorage(this, imageUri)?.let { localUri ->
-                        newImageUris.add(localUri)
-                    }
-                }
-
-                val uniqueImageUris = newImageUris.filter { newUri -> !imageUris.contains(newUri) }
-                imageUris.addAll(uniqueImageUris)
-                imageAdapter.notifyDataSetChanged()
-                saveSettings(imageUris)
-                updateImageCounter()
-            }
+            processNewImages(data)
         }
     }
 

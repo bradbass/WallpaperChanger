@@ -54,4 +54,32 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"/>
 
+    <!-- Add this to your existing settings dialog layout -->
+    <RadioGroup
+        android:id="@+id/wallpaper_screen_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <RadioButton
+            android:id="@+id/both_screens"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Both Screens"
+            android:checked="true"/>
+
+        <RadioButton
+            android:id="@+id/home_screen_only"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Home Screen Only"/>
+
+        <RadioButton
+            android:id="@+id/lock_screen_only"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Lock Screen Only"/>
+    </RadioGroup>
+
+
 </LinearLayout>
