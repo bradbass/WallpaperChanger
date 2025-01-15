@@ -14,7 +14,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Dialog
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -39,7 +38,6 @@ import com.bumptech.glide.Glide
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.provider.Settings
 import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
@@ -55,39 +53,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-
-object PermissionUtils {
-    fun hasValidPermission(context: Context, uri: Uri): Boolean {
-        return context.contentResolver.persistedUriPermissions.any {
-            it.uri == uri && it.isReadPermission
-        }
-    }
-
-    fun verifyAndRefreshPermissions(context: Context, uri: Uri) {
-        Log.d("PermissionDebug", "Starting permission refresh for $uri")
-
-        val currentPermissions = context.contentResolver.persistedUriPermissions
-        Log.d("PermissionDebug", "Current persisted permissions count: ${currentPermissions.size}")
-        currentPermissions.forEach { permission ->
-            Log.d("PermissionDebug", "Existing permission: ${permission.uri}, Read: ${permission.isReadPermission}")
-        }
-
-        try {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, flags)
-            Log.d("PermissionDebug", "Successfully requested permission for $uri")
-
-            val verified = hasValidPermission(context, uri)
-            Log.d("PermissionDebug", "Permission verification result: $verified")
-        } catch (e: SecurityException) {
-            Log.e("PermissionDebug", "Permission refresh failed for $uri: ${e.message}")
-        }
-    }
-
-    fun verifyAndRefreshPermissions(context: Context, uris: List<Uri>) {
-        uris.forEach { uri -> verifyAndRefreshPermissions(context, uri) }
-    }
-}
 
 object StorageUtils {
     private const val MAX_STORAGE_SIZE_BYTES = 1000 * 1024 * 1024 // 1000MB limit
@@ -389,29 +354,6 @@ class WallpaperService : Service() {
         }
     }
 
-    private fun verifyAndRefreshPermissions(uri: Uri) {
-        Log.d("PermissionDebug", "Starting permission refresh for $uri")
-
-        // Log current state
-        val currentPermissions = contentResolver.persistedUriPermissions
-        Log.d("PermissionDebug", "Current persisted permissions count: ${currentPermissions.size}")
-        currentPermissions.forEach { permission ->
-            Log.d("PermissionDebug", "Existing permission: ${permission.uri}, Read: ${permission.isReadPermission}")
-        }
-
-        try {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-            contentResolver.takePersistableUriPermission(uri, flags)
-            Log.d("PermissionDebug", "Successfully requested permission for $uri")
-
-            // Verify the permission was actually granted
-            val verified = hasValidPermission(uri)
-            Log.d("PermissionDebug", "Permission verification result: $verified")
-        } catch (e: SecurityException) {
-            Log.e("PermissionDebug", "Permission refresh failed for $uri: ${e.message}")
-        }
-    }
-
     private fun saveSettings(wallpapers: List<Uri>) {
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val editor = sharedPreferences.edit()
@@ -512,7 +454,6 @@ class ImageAdapter(
         notifyDataSetChanged()
     }
 }
-
 
 class MainActivity : AppCompatActivity() {
     private val pickImages = 1
@@ -650,8 +591,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        PermissionUtils.verifyAndRefreshPermissions(this, imageUris)
-
         val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
 
@@ -680,6 +619,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /*
     private fun copyImageToLocalStorage(uri: Uri): Uri? {
         try {
             val fileName = "wallpaper_${System.currentTimeMillis()}.jpg"
@@ -697,7 +637,7 @@ class MainActivity : AppCompatActivity() {
             Log.e("StorageDebug", "Failed to copy image", e)
             return null
         }
-    }
+    }*/
 
     private fun processNewImages(data: Intent?) {
         data?.let {
