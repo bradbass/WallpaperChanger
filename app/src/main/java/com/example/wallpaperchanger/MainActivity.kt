@@ -45,6 +45,7 @@ import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.Spinner
 import android.widget.Switch
+import android.widget.TextView
 import androidx.annotation.RequiresExtension
 import androidx.recyclerview.widget.GridLayoutManager
 import java.io.IOException
@@ -449,6 +450,7 @@ class MainActivity : AppCompatActivity() {
         imageUris.clear()
         imageUris.addAll(savedWallpapers)
         imageAdapter.notifyDataSetChanged()
+        updateImageCounter()
     }
 
     @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
@@ -499,6 +501,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 imageAdapter.notifyDataSetChanged()
                 saveSettings(imageUris)
+                updateImageCounter()
             }
             .setNegativeButton("No", null)
             .show()
@@ -595,6 +598,7 @@ class MainActivity : AppCompatActivity() {
                 imageUris.addAll(uniqueImageUris)
                 imageAdapter.notifyDataSetChanged()
                 saveSettings(imageUris)
+                updateImageCounter()
             }
         }
     }
@@ -622,6 +626,9 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
 
+        // Update the image counter in the dialog
+        dialog.findViewById<TextView>(R.id.image_counter)?.text = "Images: ${imageUris.size}"
+
         // Setup spinner
         val spinner = dialog.findViewById<Spinner>(R.id.transition_type)
         ArrayAdapter.createFromResource(
@@ -641,6 +648,12 @@ class MainActivity : AppCompatActivity() {
             (prefs.getLong("interval", 5 * 60 * 1000) / 60 / 1000).toString()
         )
         spinner?.setSelection(prefs.getInt("transition_type", 0))
+    }
+
+    private fun updateImageCounter() {
+        findViewById<TextView>(R.id.image_counter)?.let { counter ->
+            counter.text = "Images: ${imageUris.size}"
+        }
     }
 
     private fun saveSettings(wallpapers: List<Uri>) {
