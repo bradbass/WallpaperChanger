@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">WallpaperChanger</string>
     <string name="image">test text</string>
+    <!-- Add these to your res/values/strings.xml -->
+    <string name="wallpaper_name">Crossfade Wallpaper</string>
+    <string name="wallpaper_description">Smoothly transitions between your selected images</string>
 </resources>

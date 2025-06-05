@@ -81,6 +81,207 @@ class WallpaperService : Service() {
         }
     }
 
+    private fun setWallpaperWithCrossfade(imageUri: Uri) {
+        try {
+            contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                val newBitmap = BitmapFactory.decodeStream(inputStream)
+                val wallpaperManager = WallpaperManager.getInstance(applicationContext)
+
+                // Get current wallpaper as our starting point
+                val currentWallpaper = try {
+                    wallpaperManager.drawable?.let { drawable ->
+                        val bitmap = Bitmap.createBitmap(
+                            newBitmap.width,
+                            newBitmap.height,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, newBitmap.width, newBitmap.height)
+                        drawable.draw(canvas)
+                        bitmap
+                    }
+                } catch (e: Exception) {
+                    Log.w("WallpaperService", "Could not get current wallpaper, using black background", e)
+                    null
+                }
+
+                // Create working bitmap for compositing
+                val workingBitmap = Bitmap.createBitmap(
+                    newBitmap.width,
+                    newBitmap.height,
+                    Bitmap.Config.ARGB_8888
+                )
+
+                val canvas = Canvas(workingBitmap)
+                val paint = Paint().apply {
+                    isAntiAlias = true
+                }
+
+                // Number of steps for smooth transition (adjust for speed vs smoothness)
+                val steps = 20
+                val stepDelay = 50L // milliseconds between frames
+
+                for (i in 0..steps) {
+                    val alpha = (i.toFloat() / steps * 255).toInt()
+
+                    // Clear canvas
+                    canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+                    // Draw current wallpaper (if available)
+                    currentWallpaper?.let { current ->
+                        paint.alpha = 255 - alpha // Fade out old wallpaper
+                        canvas.drawBitmap(current, 0f, 0f, paint)
+                    }
+
+                    // Draw new wallpaper over it
+                    paint.alpha = alpha // Fade in new wallpaper
+                    canvas.drawBitmap(newBitmap, 0f, 0f, paint)
+
+                    // Set the composited wallpaper
+                    val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                    when (sharedPreferences.getInt("wallpaper_screen", R.id.both_screens)) {
+                        R.id.both_screens -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                        }
+                        R.id.home_screen_only -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_SYSTEM)
+                        }
+                        R.id.lock_screen_only -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_LOCK)
+                        }
+                        else -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_SYSTEM)
+                        }
+                    }
+
+                    // Small delay between frames for smooth animation
+                    if (i < steps) {
+                        Thread.sleep(stepDelay)
+                    }
+                }
+
+                // Clean up
+                currentWallpaper?.recycle()
+                workingBitmap.recycle()
+
+            }
+        } catch (e: IOException) {
+            Log.e("WallpaperService", "Failed to set wallpaper with crossfade", e)
+            // Fallback to regular wallpaper setting
+            setWallpaper(imageUri)
+        }
+    }
+
+    // Alternative: Optimized version with fewer bitmap operations
+    private fun setWallpaperWithOptimizedCrossfade(imageUri: Uri) {
+        try {
+            contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                val newBitmap = BitmapFactory.decodeStream(inputStream)
+                val wallpaperManager = WallpaperManager.getInstance(applicationContext)
+
+                // Get display dimensions for proper scaling
+                val displayMetrics = resources.displayMetrics
+                val screenWidth = displayMetrics.widthPixels
+                val screenHeight = displayMetrics.heightPixels
+
+                // Scale new bitmap to screen dimensions
+                val scaledNewBitmap = Bitmap.createScaledBitmap(
+                    newBitmap, screenWidth, screenHeight, true
+                )
+
+                // Get current wallpaper
+                val currentWallpaper = try {
+                    wallpaperManager.drawable?.let { drawable ->
+                        val bitmap = Bitmap.createBitmap(
+                            screenWidth, screenHeight, Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, screenWidth, screenHeight)
+                        drawable.draw(canvas)
+                        bitmap
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+
+                // Create fewer transition frames for better performance
+                val frames = listOf(0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f)
+                val frameDelay = 100L
+
+                for (alpha in frames) {
+                    val workingBitmap = if (currentWallpaper != null) {
+                        // Create crossfade composite
+                        val composite = Bitmap.createBitmap(
+                            screenWidth, screenHeight, Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(composite)
+                        val paint = Paint().apply { isAntiAlias = true }
+
+                        // Draw fading old wallpaper
+                        paint.alpha = ((1.0f - alpha) * 255).toInt()
+                        canvas.drawBitmap(currentWallpaper, 0f, 0f, paint)
+
+                        // Draw appearing new wallpaper
+                        paint.alpha = (alpha * 255).toInt()
+                        canvas.drawBitmap(scaledNewBitmap, 0f, 0f, paint)
+
+                        composite
+                    } else {
+                        // No current wallpaper, just fade in new one
+                        val composite = Bitmap.createBitmap(
+                            screenWidth, screenHeight, Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(composite)
+                        val paint = Paint().apply {
+                            isAntiAlias = true
+                            this.alpha = (alpha * 255).toInt()
+                        }
+                        canvas.drawBitmap(scaledNewBitmap, 0f, 0f, paint)
+                        composite
+                    }
+
+                    // Apply wallpaper
+                    val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
+                    when (sharedPreferences.getInt("wallpaper_screen", R.id.both_screens)) {
+                        R.id.both_screens -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
+                        }
+                        R.id.home_screen_only -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_SYSTEM)
+                        }
+                        R.id.lock_screen_only -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_LOCK)
+                        }
+                        else -> {
+                            wallpaperManager.setBitmap(workingBitmap, null, true,
+                                WallpaperManager.FLAG_SYSTEM)
+                        }
+                    }
+
+                    workingBitmap.recycle()
+
+                    if (alpha < 1.0f) {
+                        Thread.sleep(frameDelay)
+                    }
+                }
+
+                // Clean up
+                currentWallpaper?.recycle()
+                scaledNewBitmap.recycle()
+            }
+        } catch (e: Exception) {
+            Log.e("WallpaperService", "Failed to set crossfade wallpaper", e)
+            setWallpaper(imageUri)
+        }
+    }
+
     private fun setWallpaperWithPixelation(imageUri: Uri) {
         try {
             contentResolver.openInputStream(imageUri)?.use { inputStream ->
@@ -170,19 +371,21 @@ class WallpaperService : Service() {
 
             val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
             val transitionsEnabled = sharedPreferences.getBoolean("transitions_enabled", true)
-            val transitionEffect = sharedPreferences.getInt("transition_type", Context.MODE_PRIVATE)
+            val transitionEffect = sharedPreferences.getInt("transition_type", 0)
 
             if (transitionsEnabled) {
                 when (transitionEffect) {
-                    0 -> setWallpaper(nextUri)
-                    1 -> setWallpaperWithPixelation(nextUri)
-                    2 -> setWallpaperWithDissolve(nextUri)
+                    0 -> setWallpaper(nextUri) // No transition
+                    1 -> setWallpaperWithPixelation(nextUri) // Pixelation effect
+                    2 -> setWallpaperWithOptimizedCrossfade(nextUri) // Smooth crossfade
+                    3 -> setWallpaperWithCrossfade(nextUri) // Detailed crossfade (more frames)
                     else -> setWallpaper(nextUri)
                 }
             } else {
                 setWallpaper(nextUri)
             }
-        }else {
+
+        } else {
             Log.d("WallpaperService", "No images in imageUris list")
         }
     }

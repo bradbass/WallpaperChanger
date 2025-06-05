@@ -1,10 +1,13 @@
 package com.example.wallpaperchanger
 
+//import CrossfadeLiveWallpaper
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
+import android.app.WallpaperManager
+import android.content.ComponentName
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,6 +32,7 @@ import android.widget.RadioGroup
 import androidx.annotation.RequiresExtension
 import com.example.wallpaperchanger.R
 import com.example.wallpaperchanger.adapters.ImageAdapter
+import com.example.wallpaperchanger.services.CrossfadeLiveWallpaper
 import com.example.wallpaperchanger.services.WallpaperService
 import com.example.wallpaperchanger.utils.StorageUtils
 
@@ -200,7 +204,75 @@ class MainActivity : AppCompatActivity() {
         startActivityForResult(intent, pickImages)
     }
 
+    // Add these methods to your MainActivity class
+
     private fun startWallpaperService() {
+        if (imageUris.isEmpty()) {
+            Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Check if our live wallpaper is already set
+        val wallpaperManager = WallpaperManager.getInstance(this)
+        val currentWallpaper = wallpaperManager.wallpaperInfo
+
+        if (currentWallpaper?.packageName == packageName) {
+            // Our live wallpaper is already active, just update it
+            val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
+            val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
+
+            // Fixed: Changed selectedUris to imageUris
+            CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
+            Toast.makeText(this, "Wallpaper settings updated", Toast.LENGTH_SHORT).show()
+        } else {
+            // Need to set our live wallpaper - but first save the images for the wallpaper to use
+            val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
+            val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
+            CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
+            showLiveWallpaperDialog()
+        }
+    }
+
+    private fun showLiveWallpaperDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Set Live Wallpaper")
+            .setMessage("To enable smooth crossfade transitions, you need to set this app as your live wallpaper. This will open the wallpaper picker.")
+            .setPositiveButton("Set Wallpaper") { _, _ ->
+                openLiveWallpaperSettings()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun openLiveWallpaperSettings() {
+        try {
+            val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                    ComponentName(this@MainActivity, CrossfadeLiveWallpaper::class.java)
+                )
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback to general wallpaper settings
+            try {
+                startActivity(Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER))
+            } catch (e2: Exception) {
+                Toast.makeText(this, "Could not open wallpaper settings", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun stopWallpaperService() {
+        // For live wallpaper, we can't directly stop it
+        // User needs to change wallpaper manually or we can clear the images
+        CrossfadeLiveWallpaper.updateWallpaperSettings(this, emptyList(), 0)
+        Toast.makeText(this, "Wallpaper changes stopped. Change your wallpaper to fully disable.", Toast.LENGTH_LONG).show()
+    }
+
+// Add this import at the top of your file
+// import android.content.ComponentName
+
+    /*private fun startWallpaperService() {
         stopWallpaperService()
         if (imageUris.isEmpty()) {
             Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
@@ -222,7 +294,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopWallpaperService() {
         stopService(Intent(this, WallpaperService::class.java))
-    }
+    }*/
 
     @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     override fun onRequestPermissionsResult(

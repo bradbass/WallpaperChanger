@@ -2,10 +2,8 @@
 <resources>
     <string-array name="transition_types">
         <item>None</item>
-        <item>Pixelate</item>
-        <item>Dissolve</item>
-        <item>Fade</item>
-        <item>Slide</item>
-        <item>Zoom</item>
+        <item>Pixelation</item>
+        <item>Crossfade (Fast)</item>
+        <item>Crossfade (Smooth)</item>
     </string-array>
 </resources>

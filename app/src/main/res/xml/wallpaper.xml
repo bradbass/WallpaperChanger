@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/wallpaper_description"
+    android:settingsActivity="com.WallpaperChanger.MainActivity" />
+
+    <!-- Add this string to your res/values/strings.xml -->
+    <!-- <string name="wallpaper_description">Crossfade Wallpaper Changer</string> -->
