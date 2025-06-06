@@ -222,13 +222,13 @@ class MainActivity : AppCompatActivity() {
             val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
 
             // Fixed: Changed selectedUris to imageUris
-            CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
+            //CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
             Toast.makeText(this, "Wallpaper settings updated", Toast.LENGTH_SHORT).show()
         } else {
             // Need to set our live wallpaper - but first save the images for the wallpaper to use
             val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
             val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
-            CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
+            //CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
             showLiveWallpaperDialog()
         }
     }
@@ -263,10 +263,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopWallpaperService() {
-        // For live wallpaper, we can't directly stop it
-        // User needs to change wallpaper manually or we can clear the images
-        CrossfadeLiveWallpaper.updateWallpaperSettings(this, emptyList(), 0)
-        Toast.makeText(this, "Wallpaper changes stopped. Change your wallpaper to fully disable.", Toast.LENGTH_LONG).show()
+        AlertDialog.Builder(this)
+            .setTitle("Change or Remove Live Wallpaper")
+            .setMessage("To stop the live wallpaper, long-press your home screen, select 'Wallpaper & style,' and choose a different wallpaper.\n\nWould you like to open the wallpaper picker now?")
+            .setPositiveButton("Open Picker") { _, _ ->
+                val intent = Intent(Intent.ACTION_SET_WALLPAPER)
+                startActivity(Intent.createChooser(intent, "Select Wallpaper"))
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
 // Add this import at the top of your file
