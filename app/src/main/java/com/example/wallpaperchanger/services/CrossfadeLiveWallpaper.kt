@@ -14,15 +14,16 @@ class CrossfadeLiveWallpaper : WallpaperService() {
 
     override fun onCreateEngine(): Engine {
         // Load settings from SharedPreferences and pass to engine
-        val (uris, interval) = loadSettingsFromPreferences(applicationContext)
-        return CrossfadeEngine(uris, interval)
+        val (uris, interval, transitionType) = loadSettingsFromPreferences(applicationContext)
+        return CrossfadeEngine(uris, interval, transitionType)
     }
 
     // Helper to load persisted settings
-    private fun loadSettingsFromPreferences(context: Context): Pair<List<Uri>, Long> {
+    private fun loadSettingsFromPreferences(context: Context): Triple<List<Uri>, Long, Int> {
         val prefs = context.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
         val expectedCount = prefs.getInt("wallpaper_count", 0)
         val interval = prefs.getLong("interval", 5 * 60 * 1000)
+        val transitionType = prefs.getInt("transition_type", 0)
         val uris = mutableListOf<Uri>()
         var index = 0
         while (uris.size < expectedCount) {
@@ -31,17 +32,19 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             uris.addAll(uriStrings.map { Uri.parse(it) })
             index++
         }
-        return Pair(uris, interval)
+        return Triple(uris, interval, transitionType)
     }
 
     inner class CrossfadeEngine(
         initialUris: List<Uri>,
-        initialInterval: Long
+        initialInterval: Long,
+        initialTransitionType: Int
     ) : Engine() {
 
         private val handler = Handler(Looper.getMainLooper())
         private var imageUris = mutableListOf<Uri>().apply { addAll(initialUris) }
         private var changeInterval: Long = initialInterval
+        private var transitionType: Int = initialTransitionType
 
         private var currentBitmap: Bitmap? = null
         private var nextBitmap: Bitmap? = null
@@ -49,7 +52,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
 
         private var isTransitioning = false
         private var transitionProgress = 0f
-        private val transitionDuration = 2000L // 2 seconds crossfade
+        private val transitionDuration = 2000L // 2 seconds default crossfade
         private var transitionStartTime = 0L
 
         private val paint = Paint().apply {
@@ -69,22 +72,28 @@ class CrossfadeLiveWallpaper : WallpaperService() {
         private val transitionRunnable = object : Runnable {
             override fun run() {
                 if (isTransitioning) {
-                    val currentTime = System.currentTimeMillis()
-                    val elapsed = currentTime - transitionStartTime
-                    transitionProgress = (elapsed.toFloat() / transitionDuration).coerceIn(0f, 1f)
+                    when (transitionType) {
+                        1 -> { // Pixelate
+                            // Pixelate handles its own animation, so nothing here
+                        }
+                        else -> { // Crossfade
+                            val currentTime = System.currentTimeMillis()
+                            val elapsed = currentTime - transitionStartTime
+                            transitionProgress = (elapsed.toFloat() / transitionDuration).coerceIn(0f, 1f)
 
-                    drawFrame()
+                            drawFrame()
 
-                    if (transitionProgress >= 1f) {
-                        // Complete transition
-                        isTransitioning = false
-                        currentBitmap?.recycle()
-                        currentBitmap = nextBitmap
-                        nextBitmap = null
-                        drawFrame()
-                        Log.d("CrossfadeLiveWallpaper", "Transition completed")
-                    } else {
-                        handler.postDelayed(this, 16) // ~60 FPS
+                            if (transitionProgress >= 1f) {
+                                isTransitioning = false
+                                currentBitmap?.recycle()
+                                currentBitmap = nextBitmap
+                                nextBitmap = null
+                                drawFrame()
+                                Log.d("CrossfadeLiveWallpaper", "Transition completed")
+                            } else {
+                                handler.postDelayed(this, 16) // ~60 FPS
+                            }
+                        }
                     }
                 }
             }
@@ -100,7 +109,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             super.onVisibilityChanged(visible)
             if (visible) {
                 handler.post(wallpaperChangeRunnable)
-                if (isTransitioning) {
+                if (isTransitioning && transitionType != 1) {
                     handler.post(transitionRunnable)
                 }
                 Log.d("CrossfadeLiveWallpaper", "Wallpaper visible, starting updates")
@@ -135,13 +144,14 @@ class CrossfadeLiveWallpaper : WallpaperService() {
         }
 
         // To update settings from outside (e.g., on user change)
-        fun updateSettings(context: Context, uris: List<Uri>, interval: Long) {
+        fun updateSettings(context: Context, uris: List<Uri>, interval: Long, transitionType: Int) {
             imageUris.clear()
             imageUris.addAll(uris)
             changeInterval = interval
+            this.transitionType = transitionType
 
-            saveSettingsToPreferences(context, uris, interval)
-            Log.d("CrossfadeLiveWallpaper", "Settings updated: ${imageUris.size} images, interval: ${changeInterval}ms")
+            saveSettingsToPreferences(context, uris, interval, transitionType)
+            Log.d("CrossfadeLiveWallpaper", "Settings updated: ${imageUris.size} images, interval: ${changeInterval}ms, transition: $transitionType")
 
             if (imageUris.isEmpty()) {
                 handler.removeCallbacks(wallpaperChangeRunnable)
@@ -161,7 +171,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             handler.postDelayed(wallpaperChangeRunnable, changeInterval)
         }
 
-        private fun saveSettingsToPreferences(context: Context, uris: List<Uri>, interval: Long) {
+        private fun saveSettingsToPreferences(context: Context, uris: List<Uri>, interval: Long, transitionType: Int) {
             val prefs = context.getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
             val editor = prefs.edit()
             editor.putInt("wallpaper_count", uris.size)
@@ -171,6 +181,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 editor.putStringSet(key, uriStrings)
             }
             editor.putLong("interval", interval)
+            editor.putInt("transition_type", transitionType)
             editor.apply()
         }
 
@@ -201,7 +212,11 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 isTransitioning = true
                 transitionProgress = 0f
                 transitionStartTime = System.currentTimeMillis()
-                handler.post(transitionRunnable)
+                when (transitionType) {
+                    //transition effects
+                    1 -> animatePixelateTransition()
+                    else -> handler.post(transitionRunnable)
+                }
             }
         }
 
@@ -285,14 +300,51 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             }
         }
 
-        private fun drawFrame() {
+        // --- Pixelate transition logic ---
+        private fun pixelateBitmap(source: Bitmap, pixelSize: Int): Bitmap {
+            val width = source.width
+            val height = source.height
+            val scaledWidth = maxOf(1, width / pixelSize)
+            val scaledHeight = maxOf(1, height / pixelSize)
+            val scaled = Bitmap.createScaledBitmap(source, scaledWidth, scaledHeight, false)
+            return Bitmap.createScaledBitmap(scaled, width, height, false)
+        }
+
+        private fun animatePixelateTransition() {
+            val bitmap = nextBitmap ?: return
+            val pixelSizes = listOf(64, 32, 16, 8, 4, 1)
+            handler.post(object : Runnable {
+                var idx = 0
+                override fun run() {
+                    if (idx < pixelSizes.size) {
+                        val workingBitmap = pixelateBitmap(bitmap, pixelSizes[idx])
+                        drawFrame(workingBitmap)
+                        idx++
+                        handler.postDelayed(this, 120) // Adjust speed as desired
+                    } else {
+                        // End of animation: finalize the transition
+                        isTransitioning = false
+                        currentBitmap?.recycle()
+                        currentBitmap = nextBitmap
+                        nextBitmap = null
+                        drawFrame()
+                    }
+                }
+            })
+        }
+
+        // Draw either current or transition frame
+        private fun drawFrame(bitmapOverride: Bitmap? = null) {
             val holder = surfaceHolder
             var canvas: Canvas? = null
             try {
                 canvas = holder.lockCanvas()
                 canvas?.let { c ->
                     c.drawColor(Color.BLACK)
-                    if (isTransitioning && currentBitmap != null && nextBitmap != null) {
+                    if (bitmapOverride != null) {
+                        c.drawBitmap(bitmapOverride, 0f, 0f, paint)
+                    } else if (isTransitioning && currentBitmap != null && nextBitmap != null && transitionType == 0) {
+                        // crossfade
                         paint.alpha = ((1f - transitionProgress) * 255).toInt()
                         c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
                         paint.alpha = (transitionProgress * 255).toInt()
