@@ -35,12 +35,6 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".services.WallpaperService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
         <!-- Add this inside your <application> tag in AndroidManifest.xml -->
 
         <service

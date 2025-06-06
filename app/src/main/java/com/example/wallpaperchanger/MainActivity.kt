@@ -30,10 +30,8 @@ import androidx.recyclerview.widget.RecyclerView
 import android.widget.ArrayAdapter
 import android.widget.RadioGroup
 import androidx.annotation.RequiresExtension
-import com.example.wallpaperchanger.R
 import com.example.wallpaperchanger.adapters.ImageAdapter
 import com.example.wallpaperchanger.services.CrossfadeLiveWallpaper
-import com.example.wallpaperchanger.services.WallpaperService
 import com.example.wallpaperchanger.utils.StorageUtils
 
 class MainActivity : AppCompatActivity() {
