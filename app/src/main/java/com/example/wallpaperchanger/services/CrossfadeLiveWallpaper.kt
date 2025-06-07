@@ -12,10 +12,15 @@ import java.io.IOException
 
 class CrossfadeLiveWallpaper : WallpaperService() {
 
+    companion object {
+        var currentEngine: CrossfadeEngine? = null
+    }
+
     override fun onCreateEngine(): Engine {
-        // Load settings from SharedPreferences and pass to engine
         val (uris, interval, transitionType) = loadSettingsFromPreferences(applicationContext)
-        return CrossfadeEngine(uris, interval, transitionType)
+        val engine = CrossfadeEngine(uris, interval, transitionType)
+        currentEngine = engine
+        return engine
     }
 
     // Helper to load persisted settings

@@ -126,8 +126,14 @@ class MainActivity : AppCompatActivity() {
                     imageUris.removeAll(selectedImages.toSet())
                     imageAdapter.clearSelections()
                 }
-                imageAdapter.notifyDataSetChanged()
-                saveSettings(imageUris)
+                // Fetch current interval and transition type
+                val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
+                val interval = prefs.getLong("interval", 5 * 60 * 1000)
+                val transitionType = prefs.getInt("transition_type", 0)
+
+                // Updated saveSettings call
+                saveSettings(imageUris, interval, transitionType)
+
                 StorageUtils.cleanupUnusedImages(this, imageUris)
                 updateImageCounter()
             }
@@ -351,7 +357,15 @@ class MainActivity : AppCompatActivity() {
 
             imageUris.addAll(newImageUris)
             imageAdapter.notifyDataSetChanged()
-            saveSettings(imageUris)
+
+            // Fetch current interval and transition type
+            val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
+            val interval = prefs.getLong("interval", 5 * 60 * 1000)
+            val transitionType = prefs.getInt("transition_type", 0)
+
+            // Updated saveSettings call
+            saveSettings(imageUris, interval, transitionType)
+
             updateImageCounter()
         }
     }
@@ -369,7 +383,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveSettings(wallpapers: List<Uri>) {
+    private fun saveSettings(
+        wallpapers: List<Uri>,
+        interval: Long,
+        transitionType: Int
+    ) {
         val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
         val editor = sharedPreferences.edit()
 
@@ -379,7 +397,17 @@ class MainActivity : AppCompatActivity() {
             val uriStrings = chunk.map { it.toString() }.toSet()
             editor.putStringSet(key, uriStrings)
         }
+        editor.putLong("interval", interval)
+        editor.putInt("transition_type", transitionType)
         editor.apply()
+
+        // Immediately notify the running wallpaper engine, if any
+        CrossfadeLiveWallpaper.currentEngine?.updateSettings(
+            this, // or use applicationContext if needed
+            wallpapers,
+            interval,
+            transitionType
+        )
     }
 
     private fun loadSettings(): List<Uri> {
