@@ -4,6 +4,7 @@
         <item>None</item>
         <item>Pixelation</item>
         <item>Dissolve</item>
-        <item>Crossfade (Smooth)</item>
+        <item>Slide In/Out - Side</item>
+        <item>Slide in/Out - Top</item>
     </string-array>
 </resources>

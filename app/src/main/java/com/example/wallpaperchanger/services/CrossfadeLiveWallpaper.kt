@@ -221,6 +221,8 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                     //transition effects
                     1 -> animatePixelateTransition()
                     2 -> animateDissolveTransition()
+                    3 -> animateSlideLeftToRightTransition()
+                    4 -> animateSlideTopToBottomTransition()
                     else -> handler.post(transitionRunnable)
                 }
             }
@@ -318,7 +320,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
 
         private fun animatePixelateTransition() {
             val bitmap = nextBitmap ?: return
-            val pixelSizes = listOf(64, 32, 16, 8, 4, 1)
+            val pixelSizes = listOf(128, 96, 64, 32, 16, 8, 1)
             handler.post(object : Runnable {
                 var idx = 0
                 override fun run() {
@@ -326,7 +328,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                         val workingBitmap = pixelateBitmap(bitmap, pixelSizes[idx])
                         drawFrame(workingBitmap)
                         idx++
-                        handler.postDelayed(this, 120) // Adjust speed as desired
+                        handler.postDelayed(this, 200) // Adjust speed as desired
                     } else {
                         // End of animation: finalize the transition
                         isTransitioning = false
@@ -339,28 +341,37 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             })
         }
 
+        // Class-level variables
+        private var dissolveBlockOrder: IntArray? = null
+        private var dissolveBlocksPerRow = 16
+        private var dissolveBlocksPerCol = 32
+
         private fun animateDissolveTransition() {
             val from = currentBitmap
             val to = nextBitmap
             if (from == null || to == null) {
-                // Fallback to just switch
                 isTransitioning = false
                 currentBitmap = nextBitmap
                 nextBitmap = null
                 drawFrame()
                 return
             }
-            val alphas = (0..255 step 15).toList() // Adjust step and delay for smoothness/speed
+
+            // Set up the block order
+            val blockCount = dissolveBlocksPerRow * dissolveBlocksPerCol
+            dissolveBlockOrder = IntArray(blockCount) { it }.also { it.shuffle() }
+
+            val steps = 20
+            val handler = handler // Use your existing handler
             handler.post(object : Runnable {
                 var idx = 0
                 override fun run() {
-                    if (idx < alphas.size) {
-                        val alpha = alphas[idx]
-                        drawDissolveFrame(from, to, alpha)
+                    if (idx <= steps) {
+                        val progress = idx.toFloat() / steps
+                        drawDissolveFrame(from, to, progress)
                         idx++
-                        handler.postDelayed(this, 60) // Adjust speed here
+                        handler.postDelayed(this, 60)
                     } else {
-                        // End of animation
                         isTransitioning = false
                         currentBitmap?.recycle()
                         currentBitmap = nextBitmap
@@ -371,18 +382,134 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             })
         }
 
-        private fun drawDissolveFrame(from: Bitmap, to: Bitmap, alpha: Int) {
+        private fun drawDissolveFrame(from: Bitmap, to: Bitmap, progress: Float) {
             val holder = surfaceHolder
             var canvas: Canvas? = null
             try {
                 canvas = holder.lockCanvas()
                 canvas?.let { c ->
-                    val paint = Paint().apply { isAntiAlias = true }
-                    c.drawColor(Color.BLACK)
-                    paint.alpha = 255
-                    c.drawBitmap(from, 0f, 0f, paint)
-                    paint.alpha = alpha.coerceIn(0, 255)
-                    c.drawBitmap(to, 0f, 0f, paint)
+                    // Draw the 'from' bitmap as the base
+                    c.drawBitmap(from, 0f, 0f, null)
+
+                    // Prepare block info
+                    val width = c.width
+                    val height = c.height
+                    val blockW = width / dissolveBlocksPerRow
+                    val blockH = height / dissolveBlocksPerCol
+                    val totalBlocks = dissolveBlocksPerRow * dissolveBlocksPerCol
+                    val blocksToShow = (progress * totalBlocks).toInt().coerceIn(0, totalBlocks)
+
+                    // Draw blocks from 'to' bitmap in random order
+                    dissolveBlockOrder?.let { order ->
+                        for (i in 0 until blocksToShow) {
+                            val blockIdx = order[i]
+                            val row = blockIdx / dissolveBlocksPerRow
+                            val col = blockIdx % dissolveBlocksPerRow
+                            val left = col * blockW
+                            val top = row * blockH
+                            val right = if (col == dissolveBlocksPerRow - 1) width else left + blockW
+                            val bottom = if (row == dissolveBlocksPerCol - 1) height else top + blockH
+                            val srcRect = Rect(left, top, right, bottom)
+                            val dstRect = srcRect
+                            c.drawBitmap(to, srcRect, dstRect, null)
+                        }
+                    }
+                }
+            } finally {
+                canvas?.let { holder.unlockCanvasAndPost(it) }
+            }
+        }
+
+        private fun animateSlideLeftToRightTransition() {
+            val from = currentBitmap
+            val to = nextBitmap
+            if (from == null || to == null) {
+                isTransitioning = false
+                currentBitmap = nextBitmap
+                nextBitmap = null
+                drawFrame()
+                return
+            }
+            val steps = 20
+            handler.post(object : Runnable {
+                var idx = 0
+                override fun run() {
+                    if (idx <= steps) {
+                        val progress = idx.toFloat() / steps
+                        drawSlideLeftToRightFrame(from, to, progress)
+                        idx++
+                        handler.postDelayed(this, 60)
+                    } else {
+                        isTransitioning = false
+                        currentBitmap?.recycle()
+                        currentBitmap = nextBitmap
+                        nextBitmap = null
+                        drawFrame()
+                    }
+                }
+            })
+        }
+
+        private fun drawSlideLeftToRightFrame(from: Bitmap, to: Bitmap, progress: Float) {
+            val holder = surfaceHolder
+            var canvas: Canvas? = null
+            try {
+                canvas = holder.lockCanvas()
+                canvas?.let { c ->
+                    val width = c.width
+                    val offset = (width * progress).toInt()
+                    // Draw old bitmap sliding left
+                    c.drawBitmap(from, (-offset).toFloat(), 0f, null)
+                    // Draw new bitmap sliding in from right
+                    c.drawBitmap(to, (width - offset).toFloat(), 0f, null)
+                }
+            } finally {
+                canvas?.let { holder.unlockCanvasAndPost(it) }
+            }
+        }
+
+        private fun animateSlideTopToBottomTransition() {
+            val from = currentBitmap
+            val to = nextBitmap
+            if (from == null || to == null) {
+                isTransitioning = false
+                currentBitmap = nextBitmap
+                nextBitmap = null
+                drawFrame()
+                return
+            }
+            val steps = 20
+            handler.post(object : Runnable {
+                var idx = 0
+                override fun run() {
+                    if (idx <= steps) {
+                        val progress = idx.toFloat() / steps
+                        drawSlideTopToBottomFrame(from, to, progress)
+                        idx++
+                        handler.postDelayed(this, 60)
+                    } else {
+                        isTransitioning = false
+                        currentBitmap?.recycle()
+                        currentBitmap = nextBitmap
+                        nextBitmap = null
+                        drawFrame()
+                    }
+                }
+            })
+        }
+
+        private fun drawSlideTopToBottomFrame(from: Bitmap, to: Bitmap, progress: Float) {
+            val holder = surfaceHolder
+            var canvas: Canvas? = null
+            try {
+                canvas = holder.lockCanvas()
+                canvas?.let { c ->
+                    val height = c.height
+                    val offset = (height * progress).toInt()
+                    // Draw old bitmap sliding up
+                    c.drawBitmap(from, 0f, (-offset).toFloat(), null)
+                    // Draw new bitmap sliding in from bottom
+                    c.drawBitmap(to, 0f, (height - offset).toFloat(), null)
                 }
             } finally {
                 canvas?.let { holder.unlockCanvasAndPost(it) }

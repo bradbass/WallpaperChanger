@@ -221,17 +221,12 @@ class MainActivity : AppCompatActivity() {
 
         if (currentWallpaper?.packageName == packageName) {
             // Our live wallpaper is already active, just update it
-            val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
-            val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
 
             // Fixed: Changed selectedUris to imageUris
             //CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
-            Toast.makeText(this, "Wallpaper settings updated", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Wallpaper already started.", Toast.LENGTH_SHORT).show()
         } else {
             // Need to set our live wallpaper - but first save the images for the wallpaper to use
-            val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
-            val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
-            //CrossfadeLiveWallpaper.updateWallpaperSettings(this, imageUris, interval)
             showLiveWallpaperDialog()
         }
     }
@@ -276,33 +271,6 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null)
             .show()
     }
-
-// Add this import at the top of your file
-// import android.content.ComponentName
-
-    /*private fun startWallpaperService() {
-        stopWallpaperService()
-        if (imageUris.isEmpty()) {
-            Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show()
-            Log.d("MainActivity", "Service not started - no images")
-            return
-        }
-
-        val sharedPreferences = getSharedPreferences("AppSettings", MODE_PRIVATE)
-        val interval = sharedPreferences.getLong("interval", 5 * 60 * 1000)
-
-        Log.d("MainActivity", "Starting service with ${imageUris.size} images")
-        val serviceIntent = Intent(this, WallpaperService::class.java).apply {
-            putParcelableArrayListExtra("imageUris", ArrayList(imageUris))
-            putExtra("interval", interval)
-        }
-        ContextCompat.startForegroundService(this, serviceIntent)
-        Log.d("MainActivity", "Service start requested")
-    }
-
-    private fun stopWallpaperService() {
-        stopService(Intent(this, WallpaperService::class.java))
-    }*/
 
     @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     override fun onRequestPermissionsResult(
