@@ -142,30 +142,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettingsDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_settings, null)
+
+        val editInterval = dialogView.findViewById<EditText>(R.id.interval_input)
+        val transitionSpinner = dialogView.findViewById<Spinner>(R.id.transition_type)
+        val screenGroup = dialogView.findViewById<RadioGroup>(R.id.wallpaper_screen_group)
+
         val dialog = AlertDialog.Builder(this)
             .setTitle("Settings")
-            .setView(layoutInflater.inflate(R.layout.dialog_settings, null))
-            .setPositiveButton("Save") { dialog, _ ->
-                val switchTransitions = (dialog as AlertDialog).findViewById<Switch>(R.id.enable_transitions)
-                val editInterval = dialog.findViewById<EditText>(R.id.interval_input)
-                val transitionSpinner = dialog.findViewById<Spinner>(R.id.transition_type)
-                val screenGroup = dialog.findViewById<RadioGroup>(R.id.wallpaper_screen_group)
+            .setView(dialogView)
+            .setPositiveButton("Save") { _, _ ->
+                val interval = (editInterval.text.toString().toIntOrNull() ?: 5) * 60 * 1000L
+                val transitionType = transitionSpinner.selectedItemPosition
+                val wallpaperScreen = screenGroup.checkedRadioButtonId
 
                 val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
                 prefs.edit().apply {
-                    putBoolean("transitions_enabled", switchTransitions?.isChecked ?: true)
-                    putLong("interval", (editInterval?.text.toString().toIntOrNull() ?: 5) * 60 * 1000L)
-                    putInt("transition_type", transitionSpinner?.selectedItemPosition ?: 0)
-                    putInt("wallpaper_screen", screenGroup?.checkedRadioButtonId ?: R.id.both_screens)
+                    putLong("interval", interval)
+                    putInt("transition_type", transitionType)
+                    putInt("wallpaper_screen", wallpaperScreen)
                     apply()
                 }
+
+                saveSettings(imageUris, interval, transitionType)
+                Toast.makeText(this, "Wallpaper settings updated", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .create()
 
         dialog.show()
 
-        dialog.findViewById<TextView>(R.id.image_counter)?.text = "Images: ${imageUris.size}"
+// Set image counter on the dialogView, not the dialog!
+        dialogView.findViewById<TextView>(R.id.image_counter)?.text = "Images: ${imageUris.size}"
 
         val spinner = dialog.findViewById<Spinner>(R.id.transition_type)
         ArrayAdapter.createFromResource(
@@ -181,8 +189,6 @@ class MainActivity : AppCompatActivity() {
         dialog.findViewById<RadioGroup>(R.id.wallpaper_screen_group)?.check(
             prefs.getInt("wallpaper_screen", R.id.both_screens)
         )
-        dialog.findViewById<Switch>(R.id.enable_transitions)?.isChecked =
-            prefs.getBoolean("transitions_enabled", true)
         dialog.findViewById<EditText>(R.id.interval_input)?.setText(
             (prefs.getLong("interval", 5 * 60 * 1000) / 60 / 1000).toString()
         )
