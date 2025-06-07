@@ -50,31 +50,14 @@ class WallpaperService : Service() {
     }
 
     private fun startForegroundService() {
-        startForeground(1, createNotification())
+        //startForeground(1, createNotification())
         handler.post(wallpaperRunnable)
     }
 
     private fun setWallpaper(imageUri: Uri) {
         try {
             contentResolver.openInputStream(imageUri)?.use { inputStream ->
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                val wallpaperManager = WallpaperManager.getInstance(applicationContext)
-                val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
 
-                when (sharedPreferences.getInt("wallpaper_screen", R.id.both_screens)) {
-                    R.id.both_screens -> {
-                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
-                    }
-                    R.id.home_screen_only -> {
-                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                    }
-                    R.id.lock_screen_only -> {
-                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_LOCK)
-                    }
-                    else -> {
-                        wallpaperManager.setBitmap(bitmap, null, true, WallpaperManager.FLAG_SYSTEM)
-                    }
-                }
             }
         } catch (e: IOException) {
             Log.e("WallpaperService", "Failed to set wallpaper", e)
@@ -136,27 +119,6 @@ class WallpaperService : Service() {
                     // Draw new wallpaper over it
                     paint.alpha = alpha // Fade in new wallpaper
                     canvas.drawBitmap(newBitmap, 0f, 0f, paint)
-
-                    // Set the composited wallpaper
-                    val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-                    when (sharedPreferences.getInt("wallpaper_screen", R.id.both_screens)) {
-                        R.id.both_screens -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
-                        }
-                        R.id.home_screen_only -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_SYSTEM)
-                        }
-                        R.id.lock_screen_only -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_LOCK)
-                        }
-                        else -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_SYSTEM)
-                        }
-                    }
 
                     // Small delay between frames for smooth animation
                     if (i < steps) {
@@ -242,27 +204,6 @@ class WallpaperService : Service() {
                         }
                         canvas.drawBitmap(scaledNewBitmap, 0f, 0f, paint)
                         composite
-                    }
-
-                    // Apply wallpaper
-                    val sharedPreferences = getSharedPreferences("AppSettings", Context.MODE_PRIVATE)
-                    when (sharedPreferences.getInt("wallpaper_screen", R.id.both_screens)) {
-                        R.id.both_screens -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK)
-                        }
-                        R.id.home_screen_only -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_SYSTEM)
-                        }
-                        R.id.lock_screen_only -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_LOCK)
-                        }
-                        else -> {
-                            wallpaperManager.setBitmap(workingBitmap, null, true,
-                                WallpaperManager.FLAG_SYSTEM)
-                        }
                     }
 
                     workingBitmap.recycle()

@@ -19,7 +19,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.Spinner
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -28,7 +27,6 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.widget.ArrayAdapter
-import android.widget.RadioGroup
 import androidx.annotation.RequiresExtension
 import com.example.wallpaperchanger.adapters.ImageAdapter
 import com.example.wallpaperchanger.services.CrossfadeLiveWallpaper
@@ -146,7 +144,6 @@ class MainActivity : AppCompatActivity() {
 
         val editInterval = dialogView.findViewById<EditText>(R.id.interval_input)
         val transitionSpinner = dialogView.findViewById<Spinner>(R.id.transition_type)
-        val screenGroup = dialogView.findViewById<RadioGroup>(R.id.wallpaper_screen_group)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Settings")
@@ -154,13 +151,11 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Save") { _, _ ->
                 val interval = (editInterval.text.toString().toIntOrNull() ?: 5) * 60 * 1000L
                 val transitionType = transitionSpinner.selectedItemPosition
-                val wallpaperScreen = screenGroup.checkedRadioButtonId
 
                 val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
                 prefs.edit().apply {
                     putLong("interval", interval)
                     putInt("transition_type", transitionType)
-                    putInt("wallpaper_screen", wallpaperScreen)
                     apply()
                 }
 
@@ -186,9 +181,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val prefs = getSharedPreferences("AppSettings", MODE_PRIVATE)
-        dialog.findViewById<RadioGroup>(R.id.wallpaper_screen_group)?.check(
-            prefs.getInt("wallpaper_screen", R.id.both_screens)
-        )
+
         dialog.findViewById<EditText>(R.id.interval_input)?.setText(
             (prefs.getLong("interval", 5 * 60 * 1000) / 60 / 1000).toString()
         )
