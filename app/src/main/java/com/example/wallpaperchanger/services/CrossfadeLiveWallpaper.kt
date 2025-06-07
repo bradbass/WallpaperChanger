@@ -215,6 +215,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 when (transitionType) {
                     //transition effects
                     1 -> animatePixelateTransition()
+                    2 -> animateDissolveTransition()
                     else -> handler.post(transitionRunnable)
                 }
             }
@@ -331,6 +332,56 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                     }
                 }
             })
+        }
+
+        private fun animateDissolveTransition() {
+            val from = currentBitmap
+            val to = nextBitmap
+            if (from == null || to == null) {
+                // Fallback to just switch
+                isTransitioning = false
+                currentBitmap = nextBitmap
+                nextBitmap = null
+                drawFrame()
+                return
+            }
+            val alphas = (0..255 step 15).toList() // Adjust step and delay for smoothness/speed
+            handler.post(object : Runnable {
+                var idx = 0
+                override fun run() {
+                    if (idx < alphas.size) {
+                        val alpha = alphas[idx]
+                        drawDissolveFrame(from, to, alpha)
+                        idx++
+                        handler.postDelayed(this, 60) // Adjust speed here
+                    } else {
+                        // End of animation
+                        isTransitioning = false
+                        currentBitmap?.recycle()
+                        currentBitmap = nextBitmap
+                        nextBitmap = null
+                        drawFrame()
+                    }
+                }
+            })
+        }
+
+        private fun drawDissolveFrame(from: Bitmap, to: Bitmap, alpha: Int) {
+            val holder = surfaceHolder
+            var canvas: Canvas? = null
+            try {
+                canvas = holder.lockCanvas()
+                canvas?.let { c ->
+                    val paint = Paint().apply { isAntiAlias = true }
+                    c.drawColor(Color.BLACK)
+                    paint.alpha = 255
+                    c.drawBitmap(from, 0f, 0f, paint)
+                    paint.alpha = alpha.coerceIn(0, 255)
+                    c.drawBitmap(to, 0f, 0f, paint)
+                }
+            } finally {
+                canvas?.let { holder.unlockCanvasAndPost(it) }
+            }
         }
 
         // Draw either current or transition frame

@@ -3,7 +3,7 @@
     <string-array name="transition_types">
         <item>None</item>
         <item>Pixelation</item>
-        <item>Crossfade (Fast)</item>
+        <item>Dissolve</item>
         <item>Crossfade (Smooth)</item>
     </string-array>
 </resources>
