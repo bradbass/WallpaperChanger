@@ -361,7 +361,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             val blockCount = dissolveBlocksPerRow * dissolveBlocksPerCol
             dissolveBlockOrder = IntArray(blockCount) { it }.also { it.shuffle() }
 
-            val steps = 20
+            val steps = 40
             val handler = handler // Use your existing handler
             handler.post(object : Runnable {
                 var idx = 0
@@ -370,7 +370,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                         val progress = idx.toFloat() / steps
                         drawDissolveFrame(from, to, progress)
                         idx++
-                        handler.postDelayed(this, 60)
+                        handler.postDelayed(this, 16)
                     } else {
                         isTransitioning = false
                         currentBitmap?.recycle()
@@ -430,7 +430,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 drawFrame()
                 return
             }
-            val steps = 20
+            val steps = 40
             handler.post(object : Runnable {
                 var idx = 0
                 override fun run() {
@@ -438,7 +438,7 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                         val progress = idx.toFloat() / steps
                         drawSlideLeftToRightFrame(from, to, progress)
                         idx++
-                        handler.postDelayed(this, 60)
+                        handler.postDelayed(this, 16)
                     } else {
                         isTransitioning = false
                         currentBitmap?.recycle()
