@@ -39,7 +39,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Change Interval (minutes)"
-        android:inputType="number"/>
+        android:inputType="numberDecimal"/>
 
     <TextView
         android:id="@+id/transition_effects"

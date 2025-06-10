@@ -286,20 +286,16 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 }
                 // Don't clear currentBitmap until first video frame is ready!
             } else {
+                stopVideoWallpaper()
                 loadBitmap(uri) { bitmap ->
                     // Only clear videoBitmap after image is loaded
                     if (setAsCurrent) {
-                        if (bitmap != null) {
-                            currentBitmap = bitmap
-                            drawFrame()
-                            stopVideoWallpaper()
-                        } else {
-                            // Optionally, keep the video frame, log, or retry
-                            Log.e("CrossfadeLiveWallpaper", "Failed to load image, keeping video frame.")
-                        }
+                        currentBitmap = bitmap
+                        videoBitmap = null
                     } else {
                         nextBitmap = bitmap
                     }
+                    drawFrame()
                 }
             }
         }
@@ -362,14 +358,21 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 canvas = holder.lockCanvas()
                 canvas?.let { c ->
                     c.drawColor(Color.BLACK)
-                    when {
-                        videoBitmap != null -> c.drawBitmap(videoBitmap!!, 0f, 0f, paint)
-                        bitmapOverride != null -> c.drawBitmap(bitmapOverride, 0f, 0f, paint)
-                        isTransitioning && currentBitmap != null && nextBitmap != null && transitionType == 0 -> { /* crossfade logic */ }
-                        currentBitmap != null -> c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
-                        // Do not draw fallback pattern!
-                        // else: simply leave the last frame, don't clear/draw black
-                    }
+                    // Video frame
+                    if (videoBitmap != null) {
+                        c.drawBitmap(videoBitmap!!, 0f, 0f, paint)
+                    } else if (bitmapOverride != null) {
+                        c.drawBitmap(bitmapOverride, 0f, 0f, paint)
+                    } else if (isTransitioning && currentBitmap != null && nextBitmap != null && transitionType == 0) {
+                        paint.alpha = ((1f - transitionProgress) * 255).toInt()
+                        c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
+                        paint.alpha = (transitionProgress * 255).toInt()
+                        c.drawBitmap(nextBitmap!!, 0f, 0f, paint)
+                        paint.alpha = 255
+                    } else if (currentBitmap != null) {
+                        paint.alpha = 255
+                        c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
+                    } // No fallback pattern here!
                 }
             } catch (e: Exception) {
                 Log.e("CrossfadeLiveWallpaper", "Error drawing frame", e)
