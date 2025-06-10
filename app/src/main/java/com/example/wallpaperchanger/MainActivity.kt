@@ -201,8 +201,9 @@ class MainActivity : AppCompatActivity() {
     @RequiresExtension(extension = Build.VERSION_CODES.R, version = 2)
     private fun launchImagePicker() {
         val intent = Intent(MediaStore.ACTION_PICK_IMAGES).apply {
-            type = "image/*"
+            type = "*/*"
             putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 100)
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
         }
         startActivityForResult(intent, pickImages)
     }
