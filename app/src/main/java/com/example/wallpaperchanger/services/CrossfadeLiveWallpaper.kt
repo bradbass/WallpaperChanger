@@ -3,9 +3,7 @@ package com.example.wallpaperchanger.services
 import GLFrameExtractor
 import android.content.Context
 import android.graphics.*
-import android.media.MediaPlayer
 import android.net.Uri
-import android.opengl.*
 import android.os.Handler
 import android.os.Looper
 import android.service.wallpaper.WallpaperService
@@ -291,9 +289,14 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 loadBitmap(uri) { bitmap ->
                     // Only clear videoBitmap after image is loaded
                     if (setAsCurrent) {
-                        currentBitmap = bitmap
-                        drawFrame()
-                        stopVideoWallpaper()
+                        if (bitmap != null) {
+                            currentBitmap = bitmap
+                            drawFrame()
+                            stopVideoWallpaper()
+                        } else {
+                            // Optionally, keep the video frame, log, or retry
+                            Log.e("CrossfadeLiveWallpaper", "Failed to load image, keeping video frame.")
+                        }
                     } else {
                         nextBitmap = bitmap
                     }
