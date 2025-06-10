@@ -291,9 +291,14 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 loadBitmap(uri) { bitmap ->
                     // Only clear videoBitmap after image is loaded
                     if (setAsCurrent) {
-                        currentBitmap = bitmap
-                        drawFrame()
-                        stopVideoWallpaper()
+                        if (bitmap != null) {
+                            currentBitmap = bitmap
+                            drawFrame()
+                            stopVideoWallpaper()
+                        } else {
+                            // Optionally, keep the video frame, log, or retry
+                            Log.e("CrossfadeLiveWallpaper", "Failed to load image, keeping video frame.")
+                        }
                     } else {
                         nextBitmap = bitmap
                     }
