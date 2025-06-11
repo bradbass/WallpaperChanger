@@ -171,6 +171,15 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             stopVideoWallpaper()
             handler.removeCallbacks(wallpaperChangeRunnable)
             handler.removeCallbacks(transitionRunnable)
+            // Now clean up surfaces/textures:
+            playerSurface?.release()
+            playerSurface = null
+            surfaceTexture?.release()
+            surfaceTexture = null
+            glRenderer?.release()
+            glRenderer = null
+            videoBitmap = null
+            frameAvailable = false
             cleanup()
         }
 
@@ -191,10 +200,12 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 // Do NOT repeat. Instead, advance when finished.
                 playWhenReady = true
                 prepare()
-                addListener(object : Player.Listener {
+                // When video ends, just pause:
+                exoPlayer?.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
-                        if (state == ExoPlayer.STATE_ENDED) {
-                            handler.post { startTransition() }
+                        if (state == Player.STATE_ENDED) {
+                            exoPlayer?.pause()
+                            // Don't release yet! Wait for timer to trigger transition
                         }
                     }
                 })
@@ -210,14 +221,19 @@ class CrossfadeLiveWallpaper : WallpaperService() {
         }
 
         private fun stopVideoWallpaper() {
+            // Detach video from surface, but DO NOT release playerSurface or surfaceTexture here!
+            exoPlayer?.clearVideoSurface() // or exoPlayer?.setVideoSurface(null)
             exoPlayer?.release()
             exoPlayer = null
-            playerSurface?.release()
-            playerSurface = null
-            surfaceTexture?.release()
-            surfaceTexture = null
-            glRenderer?.release()
-            glRenderer = null
+
+            // Only release playerSurface, surfaceTexture, and glRenderer in onSurfaceDestroyed()
+            // playerSurface?.release() // <-- DO NOT do this here!
+            // playerSurface = null
+            // surfaceTexture?.release() // <-- DO NOT do this here!
+            // surfaceTexture = null
+            // glRenderer?.release() // <-- DO NOT do this here!
+            // glRenderer = null
+
             videoBitmap = null
             frameAvailable = false
         }
@@ -279,23 +295,33 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 val holder = surfaceHolder
                 val width = holder.surfaceFrame.width()
                 val height = holder.surfaceFrame.height()
+                Log.d("CrossfadeLiveWallpaper", "Loading video: $uri at ${width}x$height")
                 if (width > 0 && height > 0) {
                     startVideoWallpaper(uri, width, height)
                 } else {
                     pendingVideoUri = uri
+                    Log.d("CrossfadeLiveWallpaper", "Surface not ready, pending video load.")
                 }
-                // Don't clear currentBitmap until first video frame is ready!
+                // Keep currentBitmap until first video frame is ready!
             } else {
-                stopVideoWallpaper()
+                Log.d("CrossfadeLiveWallpaper", "Loading image: $uri")
                 loadBitmap(uri) { bitmap ->
-                    // Only clear videoBitmap after image is loaded
+                    Log.d("CrossfadeLiveWallpaper", "Bitmap loaded: $bitmap, size: ${bitmap?.width}x${bitmap?.height}")
                     if (setAsCurrent) {
                         currentBitmap = bitmap
-                        videoBitmap = null
+                        drawFrame()
+                        // Double buffer workaround: drawFrame, then post another drawFrame, THEN release video
+                        handler.post {
+                            drawFrame()
+                            handler.post {
+                                Log.d("CrossfadeLiveWallpaper", "Stopping video wallpaper after image drawn.")
+                                stopVideoWallpaper()
+                            }
+                        }
                     } else {
                         nextBitmap = bitmap
+                        drawFrame()
                     }
-                    drawFrame()
                 }
             }
         }
