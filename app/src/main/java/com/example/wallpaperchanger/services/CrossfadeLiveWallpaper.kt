@@ -60,6 +60,8 @@ class CrossfadeLiveWallpaper : WallpaperService() {
         private var nextBitmap: Bitmap? = null
         private var currentImageIndex = 0
 
+        private var lastVideoFrame: Bitmap? = null
+
         private var isTransitioning = false
         private var transitionProgress = 0f
         private val transitionDuration = 2000L // 2 seconds default crossfade
@@ -345,10 +347,12 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             do {
                 newIndex = Random.nextInt(imageUris.size)
             } while (imageUris.size > 1 && newIndex == currentImageIndex)
+
             currentImageIndex = newIndex
             val nextUri = imageUris[currentImageIndex]
             Log.d("CrossfadeLiveWallpaper", "startTransition: nextUri=$nextUri")
 
+            // **Check if transitioning to a video**
             if (isVideoUri(nextUri)) {
                 Log.d("CrossfadeLiveWallpaper", "Next media is video. No transition, just play video.")
                 loadMedia(nextUri, setAsCurrent = true)
@@ -357,16 +361,34 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 return
             }
 
-            // If we're currently playing a video, stop it and decode the image
+            // **Store last frame before stopping video playback**
             if (videoBitmap != null) {
-                Log.d("CrossfadeLiveWallpaper", "Currently playing video. Switching to image wallpaper.")
-                stopVideoWallpaper()
+                Log.d("CrossfadeLiveWallpaper", "Capturing last frame before switching to image.")
+                lastVideoFrame = videoBitmap?.copy(Bitmap.Config.ARGB_8888, true)
+
+                // Delay stopping the video slightly to prevent an empty frame
+                handler.postDelayed({
+                    stopVideoWallpaper()
+                    Log.d("CrossfadeLiveWallpaper", "Video stopped after last frame was stored.")
+                }, 300) // Short delay for smoother transition
             }
 
+            // **Load new image**
             loadMedia(nextUri, setAsCurrent = false)
-            isTransitioning = true
-            transitionProgress = 0f
-            transitionStartTime = System.currentTimeMillis()
+
+            // Ensure nextBitmap is available for transition
+            loadBitmap(nextUri) { loadedBitmap ->
+                if (loadedBitmap != null) {
+                    Log.d("CrossfadeLiveWallpaper", "Image successfully loaded, starting transition.")
+                    nextBitmap = loadedBitmap
+                    isTransitioning = true
+                    transitionProgress = 0f
+                    transitionStartTime = System.currentTimeMillis()
+                } else {
+                    Log.e("CrossfadeLiveWallpaper", "Failed to load next image.")
+                }
+            }
+
             when (transitionType) {
                 1 -> animatePixelateTransition()
                 2 -> animateDissolveTransition()
@@ -383,22 +405,50 @@ class CrossfadeLiveWallpaper : WallpaperService() {
             try {
                 canvas = holder.lockCanvas()
                 canvas?.let { c ->
-                    c.drawColor(Color.BLACK)
-                    // Video frame
+                    c.drawColor(Color.BLACK) // Default background
+
+                    // **Ensure live video is always prioritized**
                     if (videoBitmap != null) {
+                        Log.d("CrossfadeLiveWallpaper", "Rendering active video frame.")
                         c.drawBitmap(videoBitmap!!, 0f, 0f, paint)
-                    } else if (bitmapOverride != null) {
-                        c.drawBitmap(bitmapOverride, 0f, 0f, paint)
-                    } else if (isTransitioning && currentBitmap != null && nextBitmap != null && transitionType == 0) {
+                    }
+                    // **Fade-out last video frame during transition to image**
+                    else if (lastVideoFrame != null && isTransitioning) {
+                        Log.d("CrossfadeLiveWallpaper", "Fading out last video frame while fading in new image.")
+
+                        // **Fade out last video frame**
+                        paint.alpha = ((1f - transitionProgress) * 255).toInt()
+                        c.drawBitmap(lastVideoFrame!!, 0f, 0f, paint)
+
+                        // **Make the image fade in more noticeably**
+                        if (currentBitmap != null) {
+                            val fadeInAlpha = ((transitionProgress * 255f) + 100).coerceAtMost(255f).toInt() // Increase overlap and smoothness
+                            paint.alpha = fadeInAlpha.toInt()
+                            c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
+                        }
+
+                        paint.alpha = 255 // Reset alpha for future frames
+                    }
+                    // **Restore fade transition between images**
+                    else if (isTransitioning && currentBitmap != null && nextBitmap != null) {
+                        Log.d("CrossfadeLiveWallpaper", "Image-to-image transition in progress...")
+
+                        // Smooth fade effect
                         paint.alpha = ((1f - transitionProgress) * 255).toInt()
                         c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
+
                         paint.alpha = (transitionProgress * 255).toInt()
                         c.drawBitmap(nextBitmap!!, 0f, 0f, paint)
-                        paint.alpha = 255
-                    } else if (currentBitmap != null) {
+
+                        paint.alpha = 255 // Reset for future frames
+                    }
+                    // **Standard image rendering after transition completes**
+                    else if (currentBitmap != null) {
+                        Log.d("CrossfadeLiveWallpaper", "Rendering new image.")
+                        lastVideoFrame = null // Remove last video frame after transition finishes
                         paint.alpha = 255
                         c.drawBitmap(currentBitmap!!, 0f, 0f, paint)
-                    } // No fallback pattern here!
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("CrossfadeLiveWallpaper", "Error drawing frame", e)
@@ -406,10 +456,14 @@ class CrossfadeLiveWallpaper : WallpaperService() {
                 canvas?.let { holder.unlockCanvasAndPost(it) }
             }
 
-            // If we're displaying video, update from GL every frame
+            // **Ensure videoBitmap updates correctly**
             if (exoPlayer != null && surfaceTexture != null && glRenderer != null) {
                 if (frameAvailable) {
-                    videoBitmap = glRenderer?.getFrameBitmap(surfaceTexture!!)
+                    Log.d("CrossfadeLiveWallpaper", "Updating video frame.")
+                    val updatedFrame = glRenderer?.getFrameBitmap(surfaceTexture!!)
+                    if (updatedFrame != null) {
+                        videoBitmap = updatedFrame
+                    }
                     frameAvailable = false
                 }
             }
